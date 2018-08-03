@@ -185,7 +185,8 @@ which allows computing 1-gram, 2-gram, 3-gram, etc. by passing {it:n} as an argu
 For instance, {cmd:sim}({it:ngram,2}) is equivalent to {cmd: sim}({it:bigram}).
 {p_end}
 
-{phang}See an example for each built-in {it:simfcn} at the end of this help file. {p_end}
+{phang}Check {help "matchit##table_examples":here} for an example of how each built-in {it:simfcn}
+treats strings. {p_end}
 
 {phang}
 {opt w:eights(wgtfcn)}
@@ -382,7 +383,7 @@ It just matters in the order of the columns in the resulting dataset.
 
 {phang}4)Observations in the resulting dataset are not sorted.
 This can be easily done by making use of sorting commands such as
-{cmd:sort} or {cmd:gsort} after running {cmd:matchit}.
+{help sort} or {help gsort} after running {cmd:matchit}.
 Often, it is useful to sort the resulting dataset from the higher similarity score
 to the lower one in order to establish the best threshold.
 {p_end}
