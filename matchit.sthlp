@@ -7,6 +7,7 @@
 {viewerjumpto "Top" "matchit##Top"}{...}
 {viewerjumpto "Syntax" "matchit##syntax"}{...}
 {viewerjumpto "Description" "matchit##description"}{...}
+{viewerjumpto "References" "matchit##references"}{...}
 {viewerjumpto "Options" "matchit##options"}{...}
 {viewerjumpto "Examples" "matchit##examples"}{...}
 {marker Top}{...}
@@ -63,7 +64,7 @@ Specifies similarity score. Default is {it:jaccard}. Other built-in option is {i
 {p_end}
 
 {synopt :{opt t:hreshold(num)}}
-Similarity scores to be keept in final results. Default is .5.
+Similarity scores to be kept in final results. Default is .5.
 {p_end}
 
 {synopt :{opt over:ride}}
@@ -89,10 +90,10 @@ different sources, making it not uniformly formatted (e.g. names or addresses in
 {cmd:matchit} is a useful tool to overcome these two cases without engaging into extensive data cleaning or correction efforts. For instance, one dataset contains first names and surnames in separated fields while the other one has a fullname
 field.
 The combined fields of the first one can be matched against the second one. Similarly, addresses as free-text fields in a large dataset can be matched without major correction.
-While {cmd:matchit} replicates the most standard use of {help merge} command, it will do it less effienciently when there is no risk of false negatives.
+While {cmd:matchit} replicates the most standard use of {help merge} command, it will do it less efficiently when there is no risk of false negatives.
 
 {pstd}
-{cmd:matchit} creates a new dataset containig five variables: two from the master dataset ({it:idmaster} and {it:txtmaster}), two from the using dataset ({it:idusing} and {it:txtusing}) and a new variable containing the similarity score
+{cmd:matchit} creates a new dataset containing five variables: two from the master dataset ({it:idmaster} and {it:txtmaster}), two from the using dataset ({it:idusing} and {it:txtusing}) and a new variable containing the similarity score
 ({it:similscore}).
 
 {pstd}
