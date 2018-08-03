@@ -1,9 +1,7 @@
-*! 0.5 J.D. Raffo September 2014
+*! 0.6 J.D. Raffo September 2014
 
 /* 2DO
 -----------
-- saving partial results to disk? (check after testing against large datasets)
-- saving weights & index to disk
 - orblock
 - cite reclink
 
@@ -15,9 +13,10 @@ ALLCAPS = Mata elements
 	IDU = Vector of usingfile ids
 	TXTU = Vector of usingfile txts
     INDEXU = Array of Indexed Grams for usingfile
+    INDEXM = Array of Indexed Grams for masterfile
 	WGTINDEX = Array of weights for Grams in INDEXU (i.e. usingfile)
 	WGTU = Array of total module (weights) for strings in TXTU, keys match those from IDU.
-	       (to be used when computing scores)
+	WGTM = Array of total module (weights) for strings in TXTM, keys match those from IDM.
 	RESNUM = Matrix[.,3] with resulting idmaster, idusing & score
 	RESTXT = Matrix[.,2] with resulting txtmaster & txtusing
 	THRESHOLD = scalar with similarity threshold
@@ -44,7 +43,8 @@ program matchit
 			[Weights(string)] ///
 			[Score(string)] ///
 			[Threshold(real .5)] ///
-			[OVERride]
+			[OVERride] ///
+			[Generate(string)]
 
 	// setup //////////////////////////////////////
 	tokenize `varlist'
@@ -118,39 +118,79 @@ program matchit
 	mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
 	clear
 
-	// Creating index for USING
+	// Creating indexes
 	di "Indexing USING file. Method: `similfunc'"
 	mata: INDEXU=index_array(IDU, TXTU,similfunc_p`args_plugin')
+	di "Indexing USING file. Method: `similfunc'"
+	mata: INDEXM=index_array(IDM, TXTM,similfunc_p`args_plugin')
 
-	// Defining Computing weights from USING index
+	// Computing index weights
 	if ("`weights'"!="noweights") {
 	 di "Computing weights using: `weights'"
-	 mata: WGTINDEX=index_weights(INDEXU, weightfunc_p)
+	 mata: WGTINDEX=index_weights(INDEXU, INDEXM, weightfunc_p)
 	}
 	else {
 	 di "No weights computed"
 	 mata: WGTINDEX=asarray_create()
 	}
+	// intersection
+	di "Intersecting indexes"
+	mata: INDEXNUM=asarray_index_intersect(INDEXM,INDEXU,WGTINDEX)
+
+	// Computing weights for intersection
 	mata: asarray_notfound(WGTINDEX,1)
-	di "Computing scale for USING file"
-	mata: WGTU=long_weights(IDU, TXTU, WGTINDEX,similfunc_p`args_plugin')
+	di "Computing scales for USING file"
+	mata: WGTU=array_weights(asarray_keys(INDEXNUM)[.,2], TXTU, WGTINDEX,similfunc_p`args_plugin')
+	di "Computing scale for MASTER file"
+	mata: WGTM=array_weights(asarray_keys(INDEXNUM)[.,1], TXTM, WGTINDEX,similfunc_p`args_plugin')
+
 
 	di "Computing results"
 	mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
-	mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTINDEX,scorefunc_p, similfunc_p`args_plugin')
+	mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXNUM,WGTM,WGTU,scorefunc_p)
 
-	di "Saving results"
+    di "Saving results"
 	// checks vars naming
-	if ("`idmaster'"=="`idusing'"){
+	if ("`generate'"=="") local similscore "similscore"
+	else local similscore "`generate'"
+
+	local i = 1
+	local vartemp "`idusing'"
+	while ("`idmaster'"=="`vartemp'" | "`txtmaster'"=="`vartemp'") {
+	 local i = `i'+1
+	 local vartemp "`idusing'_`i'"
+	}
+	local idusing "`vartemp'"
+	local i = 1
+	local vartemp "`txtusing'"
+	while ("`txtmaster'"=="`vartemp'" | "`idmaster'"=="`vartemp'" | "`idusing'"=="`vartemp'" ) {
+	 local i = `i'+1
+	 local vartemp "`txtusing'_`i'"
+	}
+	local txtusing "`vartemp'"
+	local i = 1
+	local vartemp "`similscore'"
+	while ("`txtmaster'"=="`vartemp'" | "`idmaster'"=="`vartemp'" | "`idusing'"=="`vartemp'" | "`txtusing'"=="`vartemp'") {
+	 local i = `i'+1
+	 local vartemp "`similscore'_`i'"
+	}
+	local similscore "`vartemp'"
+
+
+	if ("`idmaster'"=="`idusing'" | "`txtmaster'"=="`idusing'"){
 		di "Using idvar `idusing' renamed to u_`idusing'"
 		local idusing "u_`idusing'"
 	}
-	if ("`txtmaster'"=="`txtusing'"){
+	if ("`txtmaster'"=="`txtusing'" | "`idmaster'"=="`txtusing'"){
 		di "Using textvar `txtusing' renamed to u_`txtusing'"
 		local txtusing "u_`txtusing'"
 	}
-	mata: newvars=st_addvar(("double", "str244","double", "str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "similscore"))
-	mata: st_addobs(rows(RESNUM)); st_store(.,("`idmaster'","`idusing'","similscore"), RESNUM); st_sstore(.,("`txtmaster'", "`txtusing'"), RESTXT)
+	if ("`similscore'"=="`idusing'" |"`similscore'"=="`idusing'" | "`txtmaster'"=="`idusing'"){
+		di "Using idvar `idusing' renamed to u_`idusing'"
+		local idusing "u_`idusing'"
+	}
+	mata: newvars=st_addvar(("double","str244","double","str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
+	mata: st_addobs(rows(RESNUM)); st_store(.,("`idmaster'","`idusing'","`similscore'"), RESNUM); st_sstore(.,("`txtmaster'", "`txtusing'"), RESTXT)
 	di "Done!"
 	qui compress
 	restore, not
@@ -159,31 +199,26 @@ end
 // computing scores
 capture mata: mata drop core_computing()
 mata:
-void core_computing(resultsnum, resultstxt, Threshold,idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, weightarray, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
+void core_computing(resultsnum, resultstxt, Threshold, idvar, textvar, usingidvar, usingtextvar, intersectarray, weightmaster, weightusing, pointer(function) scalar score_func)
 {
-		Qrows=rows(idvar); flag=0
-		for (i=1; i<=Qrows; i++) {
-		 if (args()>=13) Curgrams=(*token_func)(textvar[i,1], arg_token_func); else Curgrams=(*token_func)(textvar[i,1])
-		 Sumw=asarray_sumw(Curgrams,weightarray)
-		 Numerator=asarray_index_intersect(Curgrams,indexarray,weightarray)
-
-		 CurResults=asarray_create("real")
-		 for (loc=asarray_first(Numerator); loc!=NULL; loc=asarray_next(Numerator,loc)) {
-		  Similscore=(*score_func)(asarray_contents(Numerator,loc), Sumw, asarray(weightusing, asarray_key(Numerator,loc)))
-		  if (Similscore>=Threshold) asarray(CurResults, asarray_key(Numerator,loc),Similscore)
-		 }
-
-		 for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc)) {
-		  resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
-		  resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
-		 }
-		counter=i*100/Qrows
-		 if (counter>flag){
-			stata(`"di ""'+strofreal(flag)+`"%..." _continue"');
-			flag=flag+20
-		   }
-		}
-		stata(`"di "100%."')
+ NumeratorIndex=asarray_keys(intersectarray)
+ Qrows=rows(NumeratorIndex); flag=0
+ for (i=1; i<=Qrows; i++)
+ {
+  Similscore=(*score_func)(asarray(intersectarray, (NumeratorIndex[i,1],NumeratorIndex[i,2])),asarray(weightmaster, NumeratorIndex[i,1]),asarray(weightusing, NumeratorIndex[i,2]))
+  if (Similscore>=Threshold)
+  {
+   resultsnum = resultsnum \ (idvar[NumeratorIndex[i,1],1], usingidvar[NumeratorIndex[i,2],1], Similscore)
+   resultstxt = resultstxt \ (textvar[NumeratorIndex[i,1],1], usingtextvar[NumeratorIndex[i,2],1])
+  }
+  counter=i*100/Qrows
+  if (counter>flag)
+  {
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"');
+   flag=flag+20
+  }
+ }
+ stata(`"di "100%."')
 }
 end
 
@@ -222,54 +257,90 @@ function index_array(colvector idvar, colvector textvar, pointer(function) scala
 
 capture mata: mata drop index_weights()
 mata:
-function index_weights(longindex, pointer(function) scalar weight_func)
+function index_weights(longindex, shortindex, pointer(function) scalar weight_func)
  {
   R=asarray_create()
 
   for (loc=asarray_first(longindex); loc!=NULL; loc=asarray_next(longindex,loc))
+   asarray(R,asarray_key(longindex,loc),rows(asarray_contents(longindex,loc)))
+
+  for (loc=asarray_first(shortindex); loc!=NULL; loc=asarray_next(shortindex,loc))
+   if (asarray_contains(R, asarray_key(shortindex,loc))==1)
+    asarray(R,asarray_key(shortindex,loc), asarray(R, asarray_key(shortindex,loc))+rows(asarray_contents(shortindex,loc)))
+   else
+    asarray(R,asarray_key(shortindex,loc),rows(asarray_contents(shortindex,loc)))
+
+  for (loc=asarray_first(R); loc!=NULL; loc=asarray_next(R,loc))
   {
-	T=(*weight_func)(rows(asarray_contents(longindex,loc)))
-	asarray(R,asarray_key(longindex,loc),T)
+	T=(*weight_func)(asarray_contents(R,loc))
+	asarray(R,asarray_key(R,loc),T)
   }
+
   return (R)
   }
   end
 
-capture mata: mata drop long_weights()
+capture mata: mata drop array_weights()
 mata:
-function long_weights(colvector idvar, colvector textvar, weights, pointer(function) scalar token_func, | arg_token_func)
+function array_weights(colvector rawidvar, colvector textvar, weights, pointer(function) scalar token_func, | arg_token_func)
  {
   R=asarray_create("real")
-  for (i=1; i<=rows(idvar); i++)
+  Qrows=rows(rawidvar); flag=0
+  for (i=1; i<=Qrows; i++)
   {
-   if (args()>=5) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
-   Sumw=asarray_sumw(T,weights)
-   asarray(R,i,Sumw)
+   if (asarray_contains(R,rawidvar[i])!=1)
+   {
+    if (args()>=5) T=(*token_func)(textvar[rawidvar[i],1], arg_token_func); else T=(*token_func)(textvar[rawidvar[i],1])
+    Sumw=asarray_sumw(T,weights)
+    asarray(R,rawidvar[i],Sumw)
+   }
+   counter=i*100/Qrows
+   if (counter>flag)
+   {
+	stata(`"di ""'+strofreal(flag)+`"%..." _continue"');
+	flag=flag+20
+   }
   }
+  stata(`"di "100%."')
   return (R)
   }
   end
 
 capture mata: mata drop asarray_index_intersect()
 mata:
-  function asarray_index_intersect(shortarray, longindex, | weights)
+  function asarray_index_intersect(shortindex, longindex, | weights)
   {
+   Qrows=asarray_elements(shortindex); flag=0; c = 0
    if (weights==J(0, 0, .))
     weights=asarray_create("string")
-
    asarray_notfound(weights,1)
-   Matched=asarray_create("real")
-   shortkeys=asarray_keys(shortarray)
-   for (i=1; i<=rows(shortkeys); i++)
-    if (asarray_contains(longindex, shortkeys[i,1]))
+   Matched=asarray_create("real",2)
+
+   for (loc=asarray_first(shortindex); loc!=NULL; loc=asarray_next(shortindex,loc))
+   {
+	shortkey=asarray_key(shortindex,loc)
+	if (asarray_contains(longindex,shortkey)==1)
 	{
-	 A=asarray(longindex, shortkeys[i,1])
-	 for (j=1; j<=rows(A); j++)
-	  if (asarray_contains(Matched, A[j,1]))
-	   asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + asarray(shortarray, shortkeys[i,1])*A[j,2]*(asarray(weights,shortkeys[i,1])^2)))
-	  else
-	   asarray(Matched, A[j,1],asarray(shortarray, shortkeys[i,1])*A[j,2]*(asarray(weights,shortkeys[i,1])^2))
+	 A=asarray(shortindex,shortkey)
+	 B=asarray(longindex,shortkey)
+	 for (i=1; i<=rows(A); i++)
+	  for (j=1; j<=rows(B); j++)
+	  {
+	   if (asarray_contains(Matched, (A[i,1],B[j,1])))
+	    asarray(Matched, (A[i,1],B[j,1]), asarray(Matched, (A[i,1],B[j,1]))+(A[i,2]*B[j,2]*(asarray(weights,shortkey)^2)))
+	   else
+	    asarray(Matched, (A[i,1],B[j,1]), (A[i,2]*B[j,2]*(asarray(weights,shortkey)^2)))
+	  }
 	}
+    c = c + 1
+	counter=c*100/Qrows
+    if (counter>flag)
+	{
+	 stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+	 flag=flag+20
+    }
+   }
+   stata(`"di "100%."')
    return (Matched)
   }
 end
