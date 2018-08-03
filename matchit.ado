@@ -1,10 +1,10 @@
-*! 1.2 J.D. Raffo April 2016
+*! 1.4 J.D. Raffo April 2017
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
   [using/] ///
    [, IDUsing(name) TXTUsing(name)] ///
-   [SIMilmethod(string)] ///
+   [SIMilmethod(string asis)] ///
    [Weights(string)] [WGTFile(string)] ///
    [Score(string)] ///
    [Threshold(real .5)] ///
@@ -31,6 +31,8 @@ program matchit
   di "Matching columns `str1' and `str2'"
   confirm string variable `str1'
   confirm string variable `str2'
+  local curtype1:type `str1'
+  local curtype2:type `str2'
  }
  else {
   local match "index"
@@ -40,6 +42,7 @@ program matchit
   di "Matching current dataset with `using'"
   confirm numeric variable `idmaster'
   confirm string variable `txtmaster'
+  local curtype1:type `txtmaster'
   confirm file "`using'"
 
   // checks if ok to wipe master dataset
@@ -78,35 +81,28 @@ program matchit
    }
  }
  //
- if ("`similmethod'"=="") local similmethod "bigram"
+ if (`"`similmethod'"'=="") local similmethod "bigram"
+ gettoken similfunc similargs : similmethod , parse(",") quotes
+ if (`"`similfunc'"'=="") local similfunc "bigram"
 
- tokenize "`similmethod'" , parse(",")
- if ("`1'"!="") {
-  local similfunc `1'
-  macro shift
-  local similargs `*'
- }
- else {
-  local similfunc "bigram"
- }
  capture mata: similfunc_p=&simf_`similfunc'()
  if (_rc!=0) {
   di "`similfunc' not found as a similarity function. Check spelling."
   error _rc
  }
   di "Similarity function: `similfunc'"
- if ("`similargs'"!="") {
-  local args_plugin "`similargs'"
-  local testtxt "This is just a test"
-  capture mata: TEST=(*similfunc_p)("`testtxt'"`args_plugin')
+  if (`"`similargs'"'!=`""') {
+  local testtxt `""This is just a test""'
+  local args_plugin `"`similargs'"'
+  capture mata: TEST=(*similfunc_p)(`testtxt'`args_plugin')
   if (_rc!=0) {
-   di "There seems to be an error with the chosen optional argument(s): `similargs'"
-   di "(note: break is recommended. Press any key to ignore this and continue ."
+   di `"There seems to be an error with the chosen optional argument(s): `similargs'"'
+   di "(note: break is recommended. Press any key to ignore this and continue."
    set more on
    more
    set more off
   }
-  cap mata:mata drop TEST
+  cap mata: mata drop TEST
  }
  if ("`score'"=="") local score "jaccard"
  capture mata: scorefunc_p=&score_`score'()
@@ -133,6 +129,12 @@ program matchit
  // matching columns
  if ("`match'"=="columns") {
   preserve
+  /*
+  if ("`curtype1'"=="strL" | "`curtype1'"=="strL") {
+   di "Columns syntax does not allow strL types. Use -recast- to generate str# variables"
+   exit
+  }
+  */
   if ("`generate'"=="") local similscore "similscore"
  else local similscore "`generate'"
  cap gen double `similscore'=.
@@ -263,6 +265,7 @@ program matchit
  use "`using'", clear
  confirm numeric variable `idusing'
  confirm string variable `txtusing'
+ local curtype2:type `txtusing'
  if ("`weights'"!="noweights" & `wgtloaded'==0) {
   freqindex `idusing' `txtusing', keepm incm(WGTARRAY) sim(`similmethod') nost
   mata: IDU=IDW; TXTU=TXTW
@@ -314,7 +317,7 @@ program matchit
   local i = `i'+1
  }
  local similscore = "`vartemp'"
- mata: newvars=st_addvar(("double", "str244","double", "str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
+ mata: newvars=st_addvar(("double", "`curtype1'","double", "`curtype2'","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
 
  if ("`weights'"!="noweights")  mata: core_computing_wgt(THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTARRAY,STOPWARRAY,scorefunc_p, weightfunc_p, TIME, FLAG,similfunc_p`args_plugin')
  else  mata: core_computing(THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,STOPWARRAY,scorefunc_p,TIME, FLAG,similfunc_p`args_plugin')
@@ -358,7 +361,9 @@ void autostopwords(stopwordthreshold, idvar, usingidvar, weightarray, stopwordar
 void col_core_computing_wgt(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func,
 pointer(function) scalar wgt_func, weightarray, stamptime,  flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
- st_sview(TXT=.,.,textvars)
+ textvar=tokens(textvars)
+ if(st_vartype(textvar[1,1])=="strL" | st_vartype(textvar[1,2])=="strL") TXT=st_sdata(.,(textvars))
+ else st_sview(TXT=.,.,textvars)
  st_view(RESNUM=.,.,scorevar)
  Qrows=rows(TXT); flag=flagstep;
  if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
@@ -391,7 +396,9 @@ pointer(function) scalar wgt_func, weightarray, stamptime,  flagstep, pointer(fu
 void col_core_computing(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func, stamptime,  flagstep,
  pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
- st_sview(TXT=.,.,textvars)
+ textvar=tokens(textvars)
+ if(st_vartype(textvar[1,1])=="strL" | st_vartype(textvar[1,2])=="strL") TXT=st_sdata(.,(textvars))
+ else st_sview(TXT=.,.,textvars)
  st_view(RESNUM=.,.,scorevar)
  Qrows=rows(TXT); flag=flagstep;
  if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
@@ -697,24 +704,43 @@ function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(fun
  }
  return (Matched)
 }
-void load_weights_to_array(myarray,mygram, myfreq )
-{
+void load_weights_to_array(myarray,mygram, myfreq) {
  for (i=1; i<=rows(mygram); i++)
   asarray(myarray,mygram[i,1], myfreq[i,1])
 }
 // GRAM weighting functions
-function weight_simple(real scalar gramfreq)
- {
+function weight_simple(real scalar gramfreq) {
   return (1/gramfreq)
  }
-function weight_root(real scalar gramfreq)
- {
+function weight_root(real scalar gramfreq) {
   return (1/sqrt(gramfreq))
  }
-function weight_log(real scalar gramfreq)
- {
+function weight_log(real scalar gramfreq)  {
   return (1/(log(gramfreq)+1))
  }
+
+// Score functions
+// score_* = functions to compute similarity score
+function score_jaccard(real scalar numerator, real scalar denom1, real scalar denom2)
+{
+ denom=denom1*denom2
+ if (denom<=0) return (0)
+ else return (numerator/sqrt(denom))
+}
+function score_simple(real scalar numerator, real scalar denom1, real scalar denom2)
+{
+ denom=denom1+denom2
+ if (denom<=0) return (0)
+ else return (2*numerator/denom)
+}
+function score_minsimple(real scalar numerator, real scalar denom1, real scalar denom2)
+{
+ denom=denom1*denom2
+ vecdenom = denom1, denom2
+ if (denom<=0) return (0)
+ else if (numerator>min(vecdenom)) return (1)
+ else return (numerator/min(vecdenom))
+}
 // Similarity functions
 // simf_* = similarity function (e.g. simf_bigram, simf_token)
 function simf_token(string scalar parse_string, | real scalar unitflag)
@@ -884,26 +910,203 @@ function simf_firstgram(string scalar parse_string, real scalar nsize)
  }
  return(A)
 }
-// Score functions
-// score_* = functions to compute similarity score
-function score_jaccard(real scalar numerator, real scalar denom1, real scalar denom2)
-{
- denom=denom1*denom2
- if (denom<=0) return (0)
- else return (numerator/sqrt(denom))
+function simf_soundex_nara(string scalar parse_string)
+ {
+   A=asarray_create()
+   T=soundex_nara(parse_string)
+   asarray(A, T[1,1], 1)
+   return (A)
+ }
+function simf_soundex_fk(string scalar parse_string) {
+ T=asarray_create()
+ new_string=strupper(strtrim(parse_string))
+ Tlen=strlen(new_string)
+ if (Tlen>0) {
+  result=substr(new_string,1,1)
+  new_string=substr(new_string,2,.)
+  prevletter=""
+  for (j=1; j<=Tlen-1; j++) {
+   curletter=substr(new_string,j,1)
+   if (curletter!=prevletter) {
+    curdigit=0
+	if (strpos("BFPV",curletter)>0) curdigit=1
+    if (strpos("CGJKQSXZ",curletter)>0) curdigit=2
+    if (strpos("DT",curletter)>0) curdigit=3
+	if (curletter=="L") curdigit=4
+	if (strpos("MN",curletter)>0) curdigit=5
+    if (curletter=="R") curdigit=6
+	if (curdigit>0) result=result+strofreal(curdigit)
+   }
+   prevletter=curletter
+  }
+  asarray(T, result, 1)
+ }
+  return(T)
+ }
+function simf_soundex_ext(string scalar parse_string) {
+ T=asarray_create()
+ new_string=strupper(strtrim(parse_string))
+ Tlen=strlen(new_string)
+ if (Tlen>0) {
+  result=substr(new_string,1,1)
+  new_string=substr(new_string,2,.)
+  prevletter=""
+  for (j=1; j<=Tlen-1; j++) {
+   curletter=substr(new_string,j,1)
+   if (curletter!=prevletter) {
+    curdigit=0
+	if (strpos("BFPV",curletter)>0) curdigit=1
+    if (strpos("CGJKQSXZ",curletter)>0) curdigit=2
+    if (strpos("DT",curletter)>0) curdigit=3
+	if (curletter=="L") curdigit=4
+	if (strpos("MN",curletter)>0) curdigit=5
+    if (curletter=="R") curdigit=6
+	if (curdigit>0){
+	 result=result+strofreal(curdigit)
+	 asarray(T, result, 1)
+	}
+   }
+   prevletter=curletter
+  }
+ }
+ return(T)
 }
-function score_simple(real scalar numerator, real scalar denom1, real scalar denom2)
+function simf_nysiis_fk(string scalar parse_string)
 {
- denom=denom1+denom2
- if (denom<=0) return (0)
- else return (2*numerator/denom)
+ T=asarray_create()
+ new_string=strupper(strtrim(parse_string))
+ Tlen=strlen(new_string)
+ if (Tlen>0) {
+  firstkey=""
+  if(substr(new_string,1,3)=="MAC"){
+   firstkey="MC"
+   elsestring=substr(new_string,4,.)
+  }
+  else if(substr(new_string,1,2)=="KN"){
+   firstkey="N"
+   elsestring=substr(new_string,3,.)
+  }
+  else if(substr(new_string,1,1)=="K"){
+   firstkey="C"
+   elsestring=substr(new_string,2,.)
+  }
+  else if(substr(new_string,1,2)=="PH"){
+   firstkey="FF"
+   elsestring=substr(new_string,3,.)
+  }
+  else if(substr(new_string,1,2)=="PF"){
+   firstkey="FF"
+   elsestring=substr(new_string,3,.)
+  }
+  else if(substr(new_string,1,3)=="SCH"){
+   firstkey="SS"
+   elsestring=substr(new_string,4,.)
+  }
+  else elsestring=new_string
+  lastletters=substr(elsestring,-2,2)
+  lastkey=""
+  if (lastletters=="EE") {
+   lastkey="Y"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="IE") {
+   lastkey="Y"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="DT") {
+   lastkey="D"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="RT") {
+   lastkey="D"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="RD") {
+   lastkey="D"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="NT") {
+   lastkey="D"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  else if (lastletters=="ND") {
+   lastkey="D"
+   elsestring=substr(elsestring,1,strlen(elsestring)-2)
+  }
+  if (firstkey=="") {
+   firstkey=substr(elsestring,1,1)
+   elsestring=substr(elsestring,2,.)
+  }
+  elselen=strlen(elsestring)
+  prevkey=firstkey
+  finalkey=firstkey
+  curkey=""
+  for (j=1; j<=elselen; j++) {
+   curletter=substr(elsestring,j,1)
+   if (curletter=="E" & substr(elsestring,j+1,1)=="V") {
+    curkey="AF"
+	j=j+1
+   }
+   else if (strpos("AEIOU",curletter)>0) curkey="A"
+   else if (curletter=="Q") curkey="G"
+   else if (curletter=="Z") curkey="S"
+   else if (curletter=="M") curkey="N"
+   else if (curletter=="K") {
+    if (substr(elsestring,j+1,1)=="N") {
+     curkey="N"
+	 j=j+1
+    }
+    else curkey="C"
+   }
+   else if (curletter=="S" & substr(elsestring,j+1,2)=="CH") {
+    curkey="S"
+	j=j+2
+   }
+   else if (curletter=="P" & substr(elsestring,j+1,1)=="H") {
+    curkey="FF"
+	j=j+1
+   }
+   else if (curletter=="H") {
+    curkey=""
+	if (j>1) curkey=substr(elsestring,j-1,1)
+	if (strpos("AEIOU", substr(elsestring,j+1,1))>0) curkey=""
+	if (j>1 & strpos("AEIOU", substr(elsestring,j-1,1))>0) curkey=""
+   }
+   else if (curletter=="W") {
+    curkey="W"
+   	if (j>1 & strpos("AEIOU", substr(elsestring,j-1,1))>0) curkey=""
+   }
+   else if (strpos("ABCDEFGHIJKLMNOPQRSTUVWXYZ",curletter)>0) curkey=curletter
+   if (curkey!="") {
+    if (curkey!=prevkey) finalkey=finalkey+curkey
+    prevkey=curkey
+   }
+  }
+  if (prevkey!=lastkey) finalkey=finalkey+lastkey
+  if (substr(finalkey,-1,1)=="S") finalkey=substr(finalkey,1,strlen(finalkey)-1)
+  if (substr(finalkey,-2,2)=="AY") finalkey=substr(finalkey,1,strlen(finalkey)-2)+"Y"
+  if (substr(finalkey,-1,1)=="A") finalkey=substr(finalkey,1,strlen(finalkey)-1)
+  asarray(T, finalkey, 1)
+ }
+return(T)
 }
-function score_minsimple(real scalar numerator, real scalar denom1, real scalar denom2)
-{
- denom=denom1*denom2
- vecdenom = denom1, denom2
- if (denom<=0) return (0)
- else if (numerator>min(vecdenom)) return (1)
- else return (numerator/min(vecdenom))
+function simf_tokenwrap(string scalar parse_string, string scalar myfunc) {
+ if (myfunc=="nysiis_fk") p=&simf_nysiis_fk()
+ else if (myfunc=="soundex_fk") p=&simf_soundex_fk()
+ else if (myfunc=="soundex_ext") p=&simf_soundex_ext()
+ else if (myfunc=="soundex_nara") p=&simf_soundex_nara()
+ else if (myfunc=="soundex") p=&simf_soundex()
+ A=asarray_create()
+ T=tokens(parse_string)
+ for (i=1; i<=cols(T); i++){
+  B=(*p)(T[1,i])
+  for (loc=asarray_first(B); loc!=NULL; loc=asarray_next(B,loc)) {
+   curkey=asarray_key(B,loc)
+   if (asarray_contains(A, curkey)!=1) asarray(A, curkey, 1)
+   else asarray(A, curkey, asarray(A, curkey)+1)
+  }
+ }
+ return (A)
 }
+
 end
