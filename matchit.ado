@@ -1,4 +1,4 @@
-*! 0.8 J.D. Raffo March 2015
+*! 0.9 J.D. Raffo March 2015
 mata:
 mata clear
 end
@@ -92,6 +92,7 @@ program matchit
    more
    set more off
   }
+  mata:mata drop TEST
  }
  if ("`score'"=="") local score "jaccard"
  capture mata: scorefunc_p=&score_`score'()
@@ -472,16 +473,24 @@ mata:
    Matched=asarray_create("real")
    shortkeys=asarray_keys(shortarray)
    for (i=1; i<=rows(shortkeys); i++)
+   {
     curkey=shortkeys[i,1]
 	if (asarray_contains(longindex, curkey))
 	{
 	 A=asarray(longindex, curkey)
 	 for (j=1; j<=rows(A); j++)
+	 {
 	  if (asarray_contains(Matched, A[j,1]))
+	  {
 	   asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + asarray(shortarray, curkey)*A[j,2]))
+	  }
 	  else
+	  {
 	   asarray(Matched, A[j,1],asarray(shortarray, curkey)*A[j,2])
+	  }
+	 }
 	}
+   }
    return (Matched)
   }
 end
@@ -512,6 +521,15 @@ function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(fun
    }
    return (Matched)
   }
+end
+
+capture mata: mata drop load_weights_to_array()
+mata:
+void load_weights_to_array(myarray,mygram, myfreq )
+{
+ for (i=1; i<=rows(mygram); i++)
+  asarray(myarray,mygram[i,1], myfreq[i,1])
+}
 end
 
 // GRAM weighting functions
@@ -692,127 +710,4 @@ function score_minsimple(real scalar numerator, real scalar denom1, real scalar 
   else if (numerator>min(vecdenom)) return (1)
   else return (numerator/min(vecdenom))
  }
-end
-
-
-capture program drop freqindex
-program freqindex
- version 12
- syntax varlist(min=2 max=2) ///
-   [, SIMilmethod(string)] ///
-   [INCMata(string)] ///
-   [KEEPMata] [NOSTata]
-
-// setup //////////////////////////////////////
- tokenize `varlist'
- local idvar `1'
- local txtvar `2'
- confirm numeric variable `idvar'
- confirm string variable `txtvar'
- if ("`incmata'"=="") {
-  local incmata WGTARRAY
-  mata: WGTARRAY=asarray_create(); P_WGTARRAY=&`incmata'
- }
- else {
-  capture mata: P_WGTARRAY=&`incmata'
-  if (_rc!=0) {
-   di "`incmata' not found in MATA. Check spelling."
-   error _rc
-  }
- }
- if ("`keepmata'"=="") local clearmata=1
- else local clearmata=0
-
- tokenize "`similmethod'" , parse(",")
- if ("`1'"!="") {
-  local similfunc `1'
-  macro shift
-  local similargs `*'
- }
- else local similfunc "bigram"
- capture mata: similfunc_p=&simf_`similfunc'()
- if (_rc!=0) {
-  di "`similfunc' not found as a similarity function. Check spelling."
-  error _rc
- }
- if ("`similargs'"!="") {
-  local args_plugin "`similargs'"
-  local testtxt "This is just a test"
-  capture mata: TEST=(*similfunc_p)("`testtxt'"`args_plugin')
-  if (_rc!=0) {
-   di "There seems to be an error with the chosen optional argument(s): `similargs'"
-   di "(note: break is recommended. Press any key to ignore this and continue ."
-   set more on
-   more
-   set more off
-  }
- }
- // programs starts
- preserve
- mata: IDW=st_data(.,"`idvar'"); TXTW=st_sdata(.,"`txtvar'")
- mata: *P_WGTARRAY = compute_freq(TXTW, *P_WGTARRAY, similfunc_p`args_plugin')
- if ("`nostata'"==""){
-  clear
-  mata: dump_wgtarray(*P_WGTARRAY)
- }
- if ("`keepmata'"=="") mata: mata drop `incmata' IDW TXTW P_WGTARRAY
- restore, not
-end
-
-capture mata: mata drop dump_wgtarray()
-mata:
-void dump_wgtarray(myarray)
-{
- RESNUM=J(0,1,.)
- RESTXT=J(0,1,"")
- for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
- {
-  RESNUM = RESNUM \ asarray_contents(myarray, loc)
-  RESTXT = RESTXT \ asarray_key(myarray, loc)
- }
- (void) st_addvar(("str244","int"),("grams", "freq"))
- st_addobs(rows(RESNUM))
- st_store(.,("freq"), RESNUM)
- st_sstore(.,("grams"), RESTXT)
-}
-end
-
-capture mata: mata drop compute_freq()
-mata:
-function compute_freq(colvector textvar, freqindex, pointer(function) scalar token_func, | arg_token_func)
- {
-  for (i=1; i<=rows(textvar); i++)
-  {
-   if (args()>=5) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
-   array_to_index_sum(T, freqindex)
-  }
- return (freqindex)
- }
-end
-
-capture mata: mata drop array_to_index_sum()
-mata:
-void array_to_index_sum (myarray, myindex)
-{
- for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
- {
-  if (asarray_contains(myindex, asarray_key(myarray,loc))==1)
-  {
-   A=asarray(myindex, asarray_key(myarray,loc))+asarray_contents(myarray, loc)
-   asarray(myindex, asarray_key(myarray,loc), A)
-  }
-  else
-   asarray(myindex, asarray_key(myarray,loc), asarray_contents(myarray, loc))
- }
-}
-end
-
-
-capture mata: mata drop load_weights_to_array()
-mata:
-void load_weights_to_array(myarray,mygram, myfreq )
-{
- for (i=1; i<=rows(mygram); i++)
-  asarray(myarray,mygram[i,1], myfreq[i,1])
-}
 end
