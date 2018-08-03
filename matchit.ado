@@ -1,4 +1,4 @@
-*! 1.4 J.D. Raffo April 2017
+*! 1.5 J.D. Raffo July 2017
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
@@ -1107,6 +1107,39 @@ function simf_tokenwrap(string scalar parse_string, string scalar myfunc) {
   }
  }
  return (A)
+}
+function simf_tkngram(string scalar parse_string, real scalar nsize, | real scalar unitflag)
+{
+ T=asarray_create()
+ B=tokens(parse_string)
+ if (unitflag==1)
+  for (i=1; i<=cols(B); i++)
+   asarray(T, B[1,i], 1)
+ else
+  for (i=1; i<=cols(B); i++)
+  {
+   if (asarray_contains(T, B[1,i])!=1) asarray(T, B[1,i], 1)
+   else asarray(T, B[1,i], asarray(T, B[1,i])+1)
+  }
+ Tlen=strlen(parse_string)-(nsize-1)
+ if (Tlen>1)
+ {
+  for (j=1; j<=Tlen; j++)
+  {
+   gram=substr(parse_string,j,nsize)
+   if (unitflag==1) asarray(T, gram, 1)
+   else
+   {
+    if (asarray_contains(T, gram)!=1) asarray(T, gram, 1)
+    else asarray(T, gram, asarray(T, gram)+1)
+   }
+  }
+  return(T)
+ }
+ else
+ {
+  return (T)
+ }
 }
 
 end

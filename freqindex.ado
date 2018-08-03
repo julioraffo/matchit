@@ -1,4 +1,4 @@
-*! 1.2 J.D. Raffo April 2017
+*! 1.3 J.D. Raffo July 2017
 program freqindex
  version 12
  syntax varlist(min=1 max=2) ///
@@ -22,7 +22,7 @@ program freqindex
  }
  if ("`incmata'"=="") {
   local incmata WGTARRAY
-  mata: WGTARRAY=asarray_create(); P_WGTARRAY=&`incmata'  
+  mata: WGTARRAY=asarray_create(); P_WGTARRAY=&`incmata'
  }
  else {
   capture mata: P_WGTARRAY=&`incmata'
@@ -66,7 +66,7 @@ program freqindex
  }
  if ("`keepmata'"=="") {
   mata: mata drop `incmata' TXTW P_WGTARRAY similfunc_p
-  if (`myvars'==2) mata: mata drop IDW 
+  if (`myvars'==2) mata: mata drop IDW
  }
  restore, not
 end
@@ -74,12 +74,12 @@ end
 mata:
 function compute_freq(colvector textvar, freqindex, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
- for (i=1; i<=rows(textvar); i++) 
+ for (i=1; i<=rows(textvar); i++)
  {
-  if (arg_token_func2!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2) 
+  if (arg_token_func2!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2)
   else if (arg_token_func!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func)
   else T=(*token_func)(textvar[i,1])
-  array_to_index_sum(T, freqindex)   
+  array_to_index_sum(T, freqindex)
  }
  return (freqindex)
 }
@@ -92,22 +92,22 @@ void array_to_index_sum (myarray, myindex)
    A=asarray(myindex, asarray_key(myarray,loc))+asarray_contents(myarray, loc)
    asarray(myindex, asarray_key(myarray,loc), A)
   }
-  else 
-   asarray(myindex, asarray_key(myarray,loc), asarray_contents(myarray, loc))  
+  else
+   asarray(myindex, asarray_key(myarray,loc), asarray_contents(myarray, loc))
  }
 }
 void dump_wgtarray(myarray)
-{ 
+{
  curobs=0
  for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc)) {
  curobs++
  st_addobs(1)
  st_sstore(curobs,("grams"),asarray_key(myarray, loc))
  st_store(curobs,("freq"),asarray_contents(myarray, loc))
- } 
+ }
 }
 // Similarity functions
-// simf_* = similarity function (e.g. simf_bigram, simf_token) 
+// simf_* = similarity function (e.g. simf_bigram, simf_token)
 function simf_token(string scalar parse_string, | real scalar unitflag)
 {
  A=asarray_create()
@@ -116,7 +116,7 @@ function simf_token(string scalar parse_string, | real scalar unitflag)
   for (i=1; i<=cols(T); i++)
    asarray(A, T[1,i], 1)
  else
-  for (i=1; i<=cols(T); i++) 
+  for (i=1; i<=cols(T); i++)
   {
    if (asarray_contains(A, T[1,i])!=1) asarray(A, T[1,i], 1)
    else asarray(A, T[1,i], asarray(A, T[1,i])+1)
@@ -127,13 +127,13 @@ function simf_cotoken(string scalar parse_string)
 {
  A=asarray_create()
  T=tokens(parse_string)
- for (i=2; i<=cols(T); i++) 
+ for (i=2; i<=cols(T); i++)
  {
   tok1=T[1,i-1]
   tok2=T[1,i]
-  if (tok1<tok2) 
+  if (tok1<tok2)
    cotoken=invtokens((tok1, tok2))
-  else 
+  else
    cotoken=invtokens((tok2, tok1))
   if (asarray_contains(A, cotoken)!=1) asarray(A, cotoken, 1)
   else asarray(A, cotoken, asarray(A, cotoken)+1)
@@ -149,7 +149,7 @@ function simf_scotoken(string scalar parse_string)
   asarray(A, T[1,1], 1)
   return(A)
  }
- for (i=2; i<=mycols; i++) 
+ for (i=2; i<=mycols; i++)
  {
   tok1=T[1,i-1]
   if (asarray_contains(A, tok1)!=1) asarray(A, tok1, 1)
@@ -159,7 +159,7 @@ function simf_scotoken(string scalar parse_string)
   else asarray(A, tok2, asarray(A, tok2)+1)
   if (tok1<tok2)
    cotoken=invtokens((tok1, tok2))
-  else 
+  else
    cotoken=invtokens((tok2, tok1))
   if (asarray_contains(A, cotoken)!=1) asarray(A, cotoken, 1)
   else asarray(A, cotoken, asarray(A, cotoken)+1)
@@ -170,7 +170,7 @@ function simf_bigram(string scalar parse_string, | real scalar unitflag)
 {
  T=asarray_create()
  Tlen=strlen(parse_string)-1
- if (Tlen>1) 
+ if (Tlen>1)
  {
   for (j=1; j<=Tlen; j++)
   {
@@ -184,7 +184,7 @@ function simf_bigram(string scalar parse_string, | real scalar unitflag)
   }
   return(T)
  }
- else 
+ else
  {
   asarray(T, parse_string, 1)
   return (T)
@@ -194,7 +194,7 @@ function simf_ngram(string scalar parse_string, real scalar nsize, | real scalar
 {
  T=asarray_create()
  Tlen=strlen(parse_string)-(nsize-1)
- if (Tlen>1) 
+ if (Tlen>1)
  {
   for (j=1; j<=Tlen; j++)
   {
@@ -208,7 +208,7 @@ function simf_ngram(string scalar parse_string, real scalar nsize, | real scalar
   }
   return(T)
  }
- else 
+ else
  {
   asarray(T, parse_string, 1)
   return (T)
@@ -218,11 +218,11 @@ function simf_ngram_circ(string scalar parse_string, real scalar nsize, | real s
 {
  T=asarray_create()
  Tlen=strlen(parse_string)-(nsize-1)
- if (Tlen>1) 
+ if (Tlen>1)
  {
   firstgram=substr(parse_string,1,nsize)
   new_parse_string = parse_string+" "+firstgram
-  Tlen=Tlen+nsize+1 
+  Tlen=Tlen+nsize+1
   for (j=1; j<=Tlen; j++)
   {
    gram=substr(new_parse_string,j,nsize)
@@ -235,7 +235,7 @@ function simf_ngram_circ(string scalar parse_string, real scalar nsize, | real s
   }
   return(T)
  }
- else 
+ else
  {
   asarray(T, parse_string, 1)
   return (T)
@@ -245,7 +245,7 @@ function simf_token_soundex(string scalar parse_string, | real scalar unitflag)
 {
  A=asarray_create()
  T=soundex(tokens(parse_string))
- for (i=1; i<=cols(T); i++) 
+ for (i=1; i<=cols(T); i++)
  {
   if (unitflag==1) asarray(A, T[1,i], 1)
   else
@@ -307,7 +307,7 @@ function simf_soundex_fk(string scalar parse_string) {
   asarray(T, result, 1)
  }
   return(T)
- } 
+ }
 function simf_soundex_ext(string scalar parse_string) {
  T=asarray_create()
  new_string=strupper(strtrim(parse_string))
@@ -336,7 +336,7 @@ function simf_soundex_ext(string scalar parse_string) {
  }
  return(T)
 }
-function simf_nysiis_fk(string scalar parse_string) 
+function simf_nysiis_fk(string scalar parse_string)
 {
  T=asarray_create()
  new_string=strupper(strtrim(parse_string))
@@ -381,23 +381,23 @@ function simf_nysiis_fk(string scalar parse_string)
   else if (lastletters=="DT") {
    lastkey="D"
    elsestring=substr(elsestring,1,strlen(elsestring)-2)
-  } 
+  }
   else if (lastletters=="RT") {
    lastkey="D"
    elsestring=substr(elsestring,1,strlen(elsestring)-2)
-  } 
+  }
   else if (lastletters=="RD") {
    lastkey="D"
    elsestring=substr(elsestring,1,strlen(elsestring)-2)
-  } 
+  }
   else if (lastletters=="NT") {
    lastkey="D"
    elsestring=substr(elsestring,1,strlen(elsestring)-2)
-  } 
+  }
   else if (lastletters=="ND") {
    lastkey="D"
    elsestring=substr(elsestring,1,strlen(elsestring)-2)
-  } 
+  }
   if (firstkey=="") {
    firstkey=substr(elsestring,1,1)
    elsestring=substr(elsestring,2,.)
@@ -435,7 +435,7 @@ function simf_nysiis_fk(string scalar parse_string)
     curkey=""
 	if (j>1) curkey=substr(elsestring,j-1,1)
 	if (strpos("AEIOU", substr(elsestring,j+1,1))>0) curkey=""
-	if (j>1 & strpos("AEIOU", substr(elsestring,j-1,1))>0) curkey=""	
+	if (j>1 & strpos("AEIOU", substr(elsestring,j-1,1))>0) curkey=""
    }
    else if (curletter=="W") {
     curkey="W"
@@ -454,7 +454,7 @@ function simf_nysiis_fk(string scalar parse_string)
   asarray(T, finalkey, 1)
  }
 return(T)
-}  
+}
 function simf_tokenwrap(string scalar parse_string, string scalar myfunc) {
  if (myfunc=="nysiis_fk") p=&simf_nysiis_fk()
  else if (myfunc=="soundex_fk") p=&simf_soundex_fk()
@@ -472,5 +472,38 @@ function simf_tokenwrap(string scalar parse_string, string scalar myfunc) {
   }
  }
  return (A)
-}  
+}
+function simf_tkngram(string scalar parse_string, real scalar nsize, | real scalar unitflag)
+{
+ T=asarray_create()
+ B=tokens(parse_string)
+ if (unitflag==1)
+  for (i=1; i<=cols(B); i++)
+   asarray(T, B[1,i], 1)
+ else
+  for (i=1; i<=cols(B); i++)
+  {
+   if (asarray_contains(T, B[1,i])!=1) asarray(T, B[1,i], 1)
+   else asarray(T, B[1,i], asarray(T, B[1,i])+1)
+  }
+ Tlen=strlen(parse_string)-(nsize-1)
+ if (Tlen>1)
+ {
+  for (j=1; j<=Tlen; j++)
+  {
+   gram=substr(parse_string,j,nsize)
+   if (unitflag==1) asarray(T, gram, 1)
+   else
+   {
+    if (asarray_contains(T, gram)!=1) asarray(T, gram, 1)
+    else asarray(T, gram, asarray(T, gram)+1)
+   }
+  }
+  return(T)
+ }
+ else
+ {
+  return (T)
+ }
+}
 end
