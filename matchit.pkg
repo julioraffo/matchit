@@ -1,0 +1,17 @@
+v 3
+d matchit. Matches two datasets based on similar text patterns.
+d {bf:J. Raffo, WIPO, Economics and Statistics Division}
+d {bf:matchit} is a tool to join observations from two datasets
+d based on string variables which do not necessarily need to be
+d exactly the same. It performs many different string-based
+d matching techniques, allowing for a fuzzy similarity between
+d the two different text variables.
+d After installation, see help {bf:matchit}.
+d
+d Distribution-Date: 20170406
+d
+d Support: email julio.raffo@wipo.int
+f matchit.ado
+f matchit.sthlp
+f freqindex.ado
+f freqindex.sthlp
