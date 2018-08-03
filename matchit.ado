@@ -1,4 +1,4 @@
-*! 1.1 J.D. Raffo April 2016
+*! 1.2 J.D. Raffo April 2016
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
@@ -8,7 +8,7 @@ program matchit
    [Weights(string)] [WGTFile(string)] ///
    [Score(string)] ///
    [Threshold(real .5)] ///
-   [Flag(real 20)] [DIagnose] ///
+   [Flag(real 20)] [DIagnose] [STOPWordsauto] [SWThreshold(real .2)] ///
    [OVERride] ///
    [Generate(string)] [KEEPMata] [TIme]
 
@@ -19,13 +19,16 @@ program matchit
   di "matchit requires freqindex to be installed. You can get it in SSC."
   error _rc
  }
+ // version check
+ local mystr=cond(_caller()>=13,"str2045", "str244")
+
  // setup //////////////////////////////////////
  if ("`using'"=="") {
   local match "columns"
   tokenize `varlist'
   local str1 `1'
   local str2 `2'
-  di "matching columns `str1' and `str2'"
+  di "Matching columns `str1' and `str2'"
   confirm string variable `str1'
   confirm string variable `str2'
  }
@@ -61,14 +64,17 @@ program matchit
     di "`weights' not found as a weights function. Check spelling."
     error _rc
    }
+   di "Applying weights function: `weights'"
    if ("`wgtfile'"!=""){
     confirm file "`wgtfile'"
+	di "Loading `wgtfile' as weights file..." _continue
 	preserve
 	use "`wgtfile'", clear
 	mata: WFREQ=st_data(.,"freq"); WGRAM=st_sdata(.,"grams"); WGTARRAY=asarray_create()
 	mata: load_weights_to_array(WGTARRAY, WGRAM, WFREQ)
 	local wgtloaded=1
 	restore
+	di "Done!"
    }
  }
  //
@@ -88,6 +94,7 @@ program matchit
   di "`similfunc' not found as a similarity function. Check spelling."
   error _rc
  }
+  di "Similarity function: `similfunc'"
  if ("`similargs'"!="") {
   local args_plugin "`similargs'"
   local testtxt "This is just a test"
@@ -146,8 +153,20 @@ program matchit
   }
   if ("`keepmata'"==""){
    cap mata: mata drop TXTW
-   cap mata: mata drop scorefunc_p similfunc_p
    cap mata: mata drop WGTARRAY P_WGTARRAY weightfunc_p
+   cap mata: mata drop IDM
+   cap mata: mata drop IDU
+   cap mata: mata drop INDEXU
+   cap mata: mata drop THRESHOLD
+   cap mata: mata drop TXTM
+   cap mata: mata drop TXTU
+   cap mata: mata drop WGTU
+   cap mata: mata drop newvars
+   cap mata: mata drop scorefunc_p
+   cap mata: mata drop similfunc_p
+   cap mata: mata drop TIME
+   cap mata: mata drop FLAG
+   cap mata: mata drop STOPWARRAY
   }
   restore, not
   if ("`time'"!="") di c(current_date) " " c(current_time)
@@ -168,16 +187,16 @@ program matchit
    mata: mata drop TXTW P_WGTARRAY
    qui ren freq freqm
    qui gen sharem=freqm/`mN'
-   qui replace sharem=1 if sharem>1
+   local curtype:type grams
+   if ("`curtype'"=="strL") qui recast `mystr' grams, force
    qui save `diagfile1', replace
    gsort -freqm
    qui drop if _n>20
-   qui ren (freqm sharem) (freq percent)
-   qui replace percent=percent*100
-   format %9.2f percent
+   qui ren (freqm sharem) (freq grams_per_obs)
+   format %9.4f grams_per_obs
    format %9.0f freq
    di "List of most frequent grams in Master file:"
-   list grams freq percent, clean notrim
+   list grams freq grams_per_obs, t clean compress ab(50) str(50)
    di " "
    di "Analyzing Using file"
    use "`using'", clear
@@ -185,23 +204,28 @@ program matchit
    freqindex `txtusing', sim(`similmethod') keepm
    mata: mata drop TXTW P_WGTARRAY
    gen share=freq/`uN'
-   qui replace share=1 if share>1
+   gen grams_per_obs=share
    gsort -freq
-   qui gen percent=share*100
-   format %9.2f percent
+   format %9.4f grams_per_obs
    format %9.0f freq
    local upb=cond(_N>20, 20, _N)
    di "List of most frequent grams in Using file:"
-   list grams freq percent in 1/`upb', clean notrim
-   drop percent
-   qui merge 1:1 grams using `diagfile1' , keep(match)
-   qui gen pairs=sharem*`mN'*share*`uN'
-   qui gen percent=round(pairs/`mN'/`uN'*100,.01)
-   qui replace percent=100 if percent>100
-   format %9.2f percent
-   format %9.0f pairs
-   qui sum percent
+   list grams freq grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
+   drop grams_per_obs
+   local curtype:type grams
+   if ("`curtype'"=="strL") qui recast `mystr' grams, force
+   qui merge m:m grams using `diagfile1'
+   qui gen max_common_space=sharem*share*100
+   replace max_common_space=0 if max_common_space==.
+   replace max_common_space=100 if max_common_space>100
+   qui gen crosspairs=freqm*freq
+   qui gen grams_per_obs=(freqm+freq)/(`mN'+`uN')
+   format %9.4f grams_per_obs
+   format %9.2f max_common_space
+   format %9.0f crosspairs
+   qui sum max_common_space
    local psMax=round(100-`r(max)',.01)
+   if (`r(max)'>100) local psMax=0
    di " "
    di "Overall diagnosis"
    di "Pairs being compared: Master(`mN') x Using(`uN') = " `mN'*`uN'
@@ -210,9 +234,9 @@ program matchit
    di " "
    di "List of grams with greater negative impact to indexation:"
    di "(note: values are estimated, final results may differ)"
-   gsort -pairs
+   gsort -crosspairs
    local upb=cond(_N>20, 20, _N)
-   list grams pairs percent in 1/`upb' , clean notrim
+   list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
    di " "
    restore
  }
@@ -226,9 +250,15 @@ program matchit
    mata: IDM=IDW; TXTM=TXTW
    mata: mata drop IDW TXTW
   }
+ else if ("`stopwordsauto'"=="stopwordsauto") {
+   capture mata: WGTARRAY=asarray_create()
+   freqindex `idmaster' `txtmaster', keepm incm(WGTARRAY) sim(`similmethod') nost
+   mata: IDM=IDW; TXTM=TXTW
+   mata: mata drop IDW TXTW
+  }
  else {
-  mata: IDM=st_data(.,"`idmaster'"); TXTM=st_sdata(.,"`txtmaster'")
- }
+   mata: IDM=st_data(.,"`idmaster'"); TXTM=st_sdata(.,"`txtmaster'")
+  }
  di "Loading USING file: `using'"
  use "`using'", clear
  confirm numeric variable `idusing'
@@ -237,60 +267,77 @@ program matchit
   freqindex `idusing' `txtusing', keepm incm(WGTARRAY) sim(`similmethod') nost
   mata: IDU=IDW; TXTU=TXTW
   mata: mata drop IDW TXTW
+  mata: STOPWARRAY=asarray_create()
+  if ("`stopwordsauto'"=="stopwordsauto") mata: autostopwords(`swthreshold', IDM, IDU, WGTARRAY, STOPWARRAY)
+ }
+ else if ("`stopwordsauto'"=="stopwordsauto") {
+  freqindex `idusing' `txtusing', keepm incm(WGTARRAY) sim(`similmethod') nost
+  mata: IDU=IDW; TXTU=TXTW
+  mata: mata drop IDW TXTW
+  mata: STOPWARRAY=asarray_create()
+  mata: autostopwords(`swthreshold', IDM, IDU, WGTARRAY, STOPWARRAY)
  }
  else {
-  mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
+  mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'"); STOPWARRAY=asarray_create()
  }
  clear
 
 // Creating index for USING
- di "Indexing USING file. Method: `similfunc'"
+ di "Indexing USING file."
  mata: INDEXU=asarray_create()
  mata: WGTU=asarray_create("real")
- if ("`weights'"!="noweights") mata: index_array_wgt(INDEXU, IDU, TXTU, WGTU, weightfunc_p, WGTARRAY, TIME, FLAG,similfunc_p`args_plugin')
- else mata: index_array(INDEXU, IDU, TXTU, WGTU, TIME, FLAG,similfunc_p`args_plugin')
+ if ("`weights'"!="noweights") mata: index_array_wgt(INDEXU, STOPWARRAY, IDU, TXTU, WGTU, weightfunc_p, WGTARRAY, TIME, FLAG,similfunc_p`args_plugin')
+ else mata: index_array(INDEXU, STOPWARRAY, IDU, TXTU, WGTU, TIME, FLAG,similfunc_p`args_plugin')
 
- di "Computing results (average search space saved by index)"
- mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
- if ("`weights'"!="noweights")  mata: core_computing_wgt(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTARRAY, scorefunc_p, weightfunc_p, TIME, FLAG,similfunc_p`args_plugin')
- else  mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,scorefunc_p,TIME, FLAG,similfunc_p`args_plugin')
-
-
- di "Saving results"
-// checks vars naming
-if ("`generate'"=="") local similscore "similscore"
+ di "Computing results"
+ // checks vars naming
+ if ("`generate'"=="") local similscore "similscore"
  else local similscore "`generate'"
-
-local i =1
-local vartemp = "`idusing'"
-while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'"){
- local vartemp "`idusing'`i'"
- local i = `i'+1
+ local i =1
+ local vartemp = "`idusing'"
+ while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'"){
+  local vartemp "`idusing'`i'"
+  local i = `i'+1
+  }
+ local idusing = "`vartemp'"
+ local i =1
+ local vartemp = "`txtusing'"
+ while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'"){
+  local vartemp "`txtusing'`i'"
+  local i = `i'+1
  }
-local idusing = "`vartemp'"
-local i =1
-local vartemp = "`txtusing'"
-while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'"){
- local vartemp "`txtusing'`i'"
- local i = `i'+1
+ local txtusing = "`vartemp'"
+ local i =1
+ local vartemp = "`similscore'"
+ while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'" | "`similscore'"=="`txtusing'"  ){
+  local vartemp "`similscore'`i'"
+  local i = `i'+1
  }
-local txtusing = "`vartemp'"
-local i =1
-local vartemp = "`similscore'"
-while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'" | "`similscore'"=="`txtusing'"  ){
- local vartemp "`similscore'`i'"
- local i = `i'+1
- }
-local similscore = "`vartemp'"
-
+ local similscore = "`vartemp'"
  mata: newvars=st_addvar(("double", "str244","double", "str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
- mata: st_addobs(rows(RESNUM)); st_store(.,("`idmaster'","`idusing'","similscore"), RESNUM); st_sstore(.,("`txtmaster'", "`txtusing'"), RESTXT)
- di "Done!"
+
+ if ("`weights'"!="noweights")  mata: core_computing_wgt(THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTARRAY,STOPWARRAY,scorefunc_p, weightfunc_p, TIME, FLAG,similfunc_p`args_plugin')
+ else  mata: core_computing(THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,STOPWARRAY,scorefunc_p,TIME, FLAG,similfunc_p`args_plugin')
+
  qui compress
  if ("`keepmata'"==""){
-   cap mata: mata drop IDM TXTM IDU TXTU RESNUM RESTXT THRESHOLD WGTU INDEXU newvars scorefunc_p similfunc_p
-   cap mata: mata drop WGTARRAY P_WGTARRAY weightfunc_p
-   cap mata: mata drop FLAG TIME
+   cap mata: mata drop WGTARRAY
+   cap mata: mata drop P_WGTARRAY
+   cap mata: mata drop weightfunc_p
+   cap mata: mata drop STOPWARRAY
+   cap mata: mata drop TXTW
+   cap mata: mata drop IDM
+   cap mata: mata drop IDU
+   cap mata: mata drop INDEXU
+   cap mata: mata drop THRESHOLD
+   cap mata: mata drop TXTM
+   cap mata: mata drop TXTU
+   cap mata: mata drop WGTU
+   cap mata: mata drop newvars
+   cap mata: mata drop scorefunc_p
+   cap mata: mata drop similfunc_p
+   cap mata: mata drop TIME
+   cap mata: mata drop FLAG
   }
  restore, not
 if ("`time'"!="") di c(current_date) " " c(current_time)
@@ -298,6 +345,16 @@ end
 
 // computing scores columns
 mata:
+void autostopwords(stopwordthreshold, idvar, usingidvar, weightarray, stopwordarray)
+{
+  stata(`"di "Generating stopwords automatically, threshold set at:"'+strofreal(stopwordthreshold)+`"""')
+  Q2rows=rows(idvar)+rows(usingidvar)
+  stopwordlimit=stopwordthreshold*Q2rows
+  for (loc=asarray_first(weightarray); loc!=NULL; loc=asarray_next(weightarray,loc)) {
+	 if(asarray_contents(weightarray,loc)>stopwordlimit) asarray(stopwordarray,asarray_key(weightarray,loc),1)
+  }
+  stata(`"di "Done!" "')
+}
 void col_core_computing_wgt(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func,
 pointer(function) scalar wgt_func, weightarray, stamptime,  flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
@@ -312,7 +369,7 @@ pointer(function) scalar wgt_func, weightarray, stamptime,  flagstep, pointer(fu
   if (counter>flag)
   {
    if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%""')
+   stata(`"di ""'+strofreal(round(counter, flagstep))+`"%""')
    flag=flag+flagstep
   }
   T1=asarray_create()
@@ -328,6 +385,7 @@ pointer(function) scalar wgt_func, weightarray, stamptime,  flagstep, pointer(fu
   Num=asarray_vecprod_wgt(T1,T2, weightarray, wgt_func)
   RESNUM[i,1]= (*score_func)(Num,D1,D2)
  }
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
  stata(`"di "Done!"')
 }
 void col_core_computing(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func, stamptime,  flagstep,
@@ -344,7 +402,7 @@ void col_core_computing(string scalar textvars, string scalar scorevar, pointer(
   if (counter>flag)
   {
    if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%""')
+   stata(`"di ""'+strofreal(round(counter, flagstep))+`"%""')
    flag=flag+flagstep
   }
   T1=asarray_create()
@@ -360,22 +418,43 @@ void col_core_computing(string scalar textvars, string scalar scorevar, pointer(
   Num=asarray_vecprod(T1,T2)
   RESNUM[i,1]= (*score_func)(Num,D1,D2)
  }
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
  stata(`"di "Done!"')
 }
-function asarray_sumsq(myarray)
+function asarray_sumsq(myarray, | stopwordarray)
 {
  myscore=0
- for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc)) myscore=myscore+asarray_contents(myarray,loc)^2
+ if (stopwordarray==J(0, 0, .))
+ {
+  for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc)) myscore=myscore+asarray_contents(myarray,loc)^2
+ }
+ else
+ {
+  for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
+  {
+   curkey=asarray_key(myarray,loc)
+   if (asarray_contains(stopwordarray, curkey)==0) myscore=myscore+asarray_contents(myarray,loc)^2
+  }
+ }
  return (myscore)
 }
-function asarray_sumw(shortarray, weights, pointer(function) scalar wgt_func)
+function asarray_sumw(shortarray, weights, pointer(function) scalar wgt_func , | stopwordarray)
 {
  asarray_notfound(weights,1)
  Sumw=0
  for (loc=asarray_first(shortarray); loc!=NULL; loc=asarray_next(shortarray,loc))
  {
-  A = asarray_contents(shortarray,loc) * ((*wgt_func)(asarray(weights,asarray_key(shortarray,loc))))
-  Sumw = Sumw + A^2
+  curkey=asarray_key(shortarray,loc)
+  if (stopwordarray==J(0, 0, .))
+  {
+   A = asarray_contents(shortarray,loc) * ((*wgt_func)(asarray(weights,curkey)))
+   Sumw = Sumw + A^2
+  }
+  else if (asarray_contains(stopwordarray, curkey)==0)
+  {
+   A = asarray_contents(shortarray,loc) * ((*wgt_func)(asarray(weights,curkey)))
+   Sumw = Sumw + A^2
+  }
  }
  return (Sumw)
 }
@@ -404,75 +483,83 @@ function asarray_vecprod(myarray1, myarray2)
  return (curscore)
 }
 // computing scores index
-void core_computing(resultsnum, resultstxt, threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing,
+void core_computing(threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, stopwordarray,
 pointer(function) scalar score_func, stamptime,  flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
- Qrows=rows(idvar); flag=flagstep; spacecount=0; UROWS=rows(usingidvar)
- stata(`"di "Percent completed...(search space saved by index so far)""')
+ Qrows=rows(idvar); flag=flagstep; spacecount=0; UROWS=rows(usingidvar); curobs=0
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+ stata(`"di "{tab}Percent completed ...{tab}(search space saved by index so far)""')
  for (i=1; i<=Qrows; i++)
  {
   if (arg_token_func2!=J(0, 0, .)) Curgrams=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2)
   else if (arg_token_func!=J(0, 0, .)) Curgrams=(*token_func)(textvar[i,1], arg_token_func)
   else Curgrams=(*token_func)(textvar[i,1])
-  Curdenom=asarray_sumsq(Curgrams)
-  Numerator=asarray_index_intersect(Curgrams,indexarray)
+  Curdenom=asarray_sumsq(Curgrams, stopwordarray)
+  Numerator=asarray_index_intersect(Curgrams,indexarray, stopwordarray)
   spacecount=spacecount+asarray_elements(Numerator)
-  CurResults=asarray_create("real")
   for (loc=asarray_first(Numerator); loc!=NULL; loc=asarray_next(Numerator,loc))
   {
-   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, asarray_key(Numerator,loc)))
-   if (Similscore>=threshold) asarray(CurResults, asarray_key(Numerator,loc),Similscore)
-  }
-  for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc))
-  {
-   resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
-   resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
+   usingkey=asarray_key(Numerator,loc)
+   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, usingkey))
+   if (Similscore>=threshold)
+   {
+     curobs++
+     st_addobs(1)
+	 st_store(curobs,(1,3,5), (idvar[i,1], usingidvar[usingkey,1], Similscore))
+	 st_sstore(curobs,(2,4), (textvar[i,1], usingtextvar[usingkey,1]))
+	}
   }
   counter=i*100/Qrows
   if (counter>flag)
   {
-   if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%...("'+strofreal(100-trunc(spacecount*100/UROWS/i))+`"%)""')
+   if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+   stata(`"di "{tab}"'+strofreal(round(counter, flagstep))+`"%{tab}{tab}  ...{tab}("'+strofreal(100-trunc(spacecount*100/UROWS/i))+`"%)""')
    flag=flag+flagstep
   }
  }
- stata(`"di "Done!...Total search space saved by index: "'+strofreal(100-trunc(spacecount*100/UROWS/Qrows))+`"%""')
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+ stata(`"di "{tab}Done!""')
+ stata(`"di "Total search space saved by index: "'+strofreal(100-trunc(spacecount*100/UROWS/Qrows))+`"%""')
 }
-void core_computing_wgt(resultsnum, resultstxt, Threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, weightarray,
-pointer(function) scalar score_func, pointer(function) scalar wgt_func, stamptime,  flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
+void core_computing_wgt(threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, weightarray, stopwordarray,
+pointer(function) scalar score_func, pointer(function) scalar wgt_func, stamptime, flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
- Qrows=rows(idvar); flag=flagstep; spacecount=0; UROWS=rows(usingidvar)
- stata(`"di "0%...(search space saved by index so far)""')
+ Qrows=rows(idvar); flag=flagstep; spacecount=0; UROWS=rows(usingidvar); curobs=0
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+ stata(`"di "{tab}Percent completed ...{tab}(search space saved by index so far)""')
  for (i=1; i<=Qrows; i++)
  {
   if (arg_token_func2!=J(0, 0, .)) Curgrams=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2)
   else if (arg_token_func!=J(0, 0, .)) Curgrams=(*token_func)(textvar[i,1], arg_token_func)
   else Curgrams=(*token_func)(textvar[i,1])
-  Curdenom=asarray_sumw(Curgrams,weightarray, wgt_func)
-  Numerator=asarray_index_intersect_wgt(Curgrams,indexarray,weightarray,wgt_func)
+  Curdenom=asarray_sumw(Curgrams,weightarray, wgt_func, stopwordarray)
+  Numerator=asarray_index_intersect_wgt(Curgrams,indexarray,weightarray,wgt_func,stopwordarray)
   spacecount=spacecount+asarray_elements(Numerator)
-  CurResults=asarray_create("real")
   for (loc=asarray_first(Numerator); loc!=NULL; loc=asarray_next(Numerator,loc))
   {
-   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, asarray_key(Numerator,loc)))
-   if (Similscore>=Threshold) asarray(CurResults, asarray_key(Numerator,loc),Similscore)
-  }
-  for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc))
-  {
-   resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
-   resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
+   usingkey=asarray_key(Numerator,loc)
+   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, usingkey))
+   if (Similscore>=threshold)
+   {
+    curobs++
+	st_addobs(1)
+	st_store(curobs,(1,3,5), (idvar[i,1], usingidvar[usingkey,1], Similscore))
+	st_sstore(curobs,(2,4), (textvar[i,1], usingtextvar[usingkey,1]))
+   }
   }
   counter=i*100/Qrows
   if (counter>flag)
   {
-   if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%...("'+strofreal(100-trunc(spacecount*100/UROWS/i))+`"%)""')
+   if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+   stata(`"di "{tab}"'+strofreal(round(counter, flagstep))+`"%{tab}{tab}  ...{tab}("'+strofreal(100-trunc(spacecount*100/UROWS/i))+`"%)""')
    flag=flag+flagstep
   }
  }
- stata(`"di "Done!...Total search space saved by index: "'+strofreal(100-trunc(spacecount*100/UROWS/Qrows))+`"%""')
+  if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "->" _continue"')
+ stata(`"di "{tab}Done!""')
+ stata(`"di "Total search space saved by index: "'+strofreal(100-trunc(spacecount*100/UROWS/Qrows))+`"%""')
 }
-void index_array(myindex, colvector idvar, colvector textvar, wgtusing, stamptime, flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
+void index_array(myindex, stopwordarray, colvector idvar, colvector textvar, wgtusing, stamptime, flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
  Qrows=rows(idvar); flag=flagstep;
  if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
@@ -483,98 +570,109 @@ void index_array(myindex, colvector idvar, colvector textvar, wgtusing, stamptim
   if (counter>flag)
   {
    if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%""')
+   stata(`"di ""'+strofreal(round(counter, flagstep))+`"%""')
    flag=flag+flagstep
   }
   T=asarray_create()
   if (arg_token_func2!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2)
   else if (arg_token_func!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func)
   else T=(*token_func)(textvar[i,1])
-  array_to_index_vecadd(T, myindex, i)
-  asarray(wgtusing,i,asarray_sumsq(T))
+  array_to_index_vecadd(T, myindex, i, stopwordarray)
+  asarray(wgtusing,i,asarray_sumsq(T, stopwordarray))
  }
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
  stata(`"di "Done!"')
 }
-void array_to_index_vecadd (myarray, myindex, mynum)
+void array_to_index_vecadd (myarray, myindex, mynum, stopwordarray)
 {
  for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
  {
-  if (asarray_contains(myindex, asarray_key(myarray,loc))==1)
+  curkey = asarray_key(myarray,loc)
+  if (asarray_contains(stopwordarray, curkey)==0)
   {
-   A=asarray(myindex, asarray_key(myarray,loc))\(mynum, asarray_contents(myarray, loc))
-   asarray(myindex, asarray_key(myarray,loc), A)
+   curvalue = asarray_contents(myarray, loc)
+   if (asarray_contains(myindex, curkey)==1)
+   {
+    A=asarray(myindex, curkey)\(mynum, curvalue)
+    asarray(myindex, curkey, A)
+   }
+   else
+    asarray(myindex, curkey, (mynum, curvalue))
   }
-  else
-   asarray(myindex, asarray_key(myarray,loc), (mynum, asarray_contents(myarray, loc)))
  }
 }
-void index_array_wgt(myindex, colvector idvar, colvector textvar, wgtusing, pointer(function) scalar weight_func, weights,
+void index_array_wgt(myindex, stopwordarray, colvector idvar, colvector textvar, wgtusing, pointer(function) scalar weight_func, weights,
 stamptime, flagstep, pointer(function) scalar token_func, | arg_token_func, arg_token_func2)
 {
  Qrows=rows(idvar); flag=flagstep;
- stata(`"di "0%..." _continue"')
+ if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
+ stata(`"di "0%""')
  for (i=1; i<=Qrows; i++)
  {
   counter=i*100/Qrows
   if (counter>flag)
   {
    if(stamptime==1) stata(`"di c(current_date) " " c(current_time) "-> " _continue"')
-   stata(`"di ""'+strofreal(trunc(counter))+`"%""')
+   stata(`"di ""'+strofreal(round(counter, flagstep))+`"%""')
    flag=flag+flagstep
   }
   T=asarray_create()
   if (arg_token_func2!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func, arg_token_func2)
   else if (arg_token_func!=J(0, 0, .)) T=(*token_func)(textvar[i,1], arg_token_func)
   else T=(*token_func)(textvar[i,1])
-  array_to_index_vecadd_wgt(T, myindex, i, wgtusing, weight_func, weights)
+  array_to_index_vecadd_wgt(T, myindex, i, wgtusing, weight_func, weights, stopwordarray)
  }
  stata(`"di "Done!"')
 }
-void array_to_index_vecadd_wgt(myarray, myindex, mynum, wgtusing, pointer(function) scalar weight_func, weights)
+void array_to_index_vecadd_wgt(myarray, myindex, mynum, wgtusing, pointer(function) scalar weight_func, weights, stopwordarray)
 {
  W=0
  for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
  {
   curkey = asarray_key(myarray,loc)
-  curvalue = asarray_contents(myarray, loc)
-  if (asarray_contains(myindex, curkey)==1)
+  if (asarray_contains(stopwordarray, curkey)==0)
   {
-   A=asarray(myindex, curkey)\(mynum, curvalue)
-   asarray(myindex, curkey, A)
-  }
-  else
-   asarray(myindex, curkey, (mynum, curvalue))
+   curvalue = asarray_contents(myarray, loc)
+   if (asarray_contains(myindex, curkey)==1)
+   {
+    A=asarray(myindex, curkey)\(mynum, curvalue)
+    asarray(myindex, curkey, A)
+   }
+   else
+    asarray(myindex, curkey, (mynum, curvalue))
 
-  W=W+(curvalue * ((*weight_func)(asarray(weights, curkey))))^2
+   W=W+(curvalue * ((*weight_func)(asarray(weights, curkey))))^2
+  }
  }
  asarray(wgtusing,mynum,W)
 }
-function asarray_index_intersect(shortarray, longindex)
+function asarray_index_intersect(shortarray, longindex, stopwordarray)
 {
  Matched=asarray_create("real")
  shortkeys=asarray_keys(shortarray)
  for (i=1; i<=rows(shortkeys); i++)
  {
   curkey=shortkeys[i,1]
-  if (asarray_contains(longindex, curkey))
-  {
-   A=asarray(longindex, curkey)
-   for (j=1; j<=rows(A); j++)
+  if (asarray_contains(stopwordarray, curkey)==0)
+   if (asarray_contains(longindex, curkey))
    {
-    if (asarray_contains(Matched, A[j,1]))
+    A=asarray(longindex, curkey)
+    for (j=1; j<=rows(A); j++)
     {
-     asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + asarray(shortarray, curkey)*A[j,2]))
-    }
-    else
-    {
-     asarray(Matched, A[j,1],asarray(shortarray, curkey)*A[j,2])
+     if (asarray_contains(Matched, A[j,1]))
+     {
+      asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + asarray(shortarray, curkey)*A[j,2]))
+     }
+     else
+     {
+      asarray(Matched, A[j,1],asarray(shortarray, curkey)*A[j,2])
+     }
     }
    }
-  }
  }
  return (Matched)
 }
-function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(function) scalar weight_func)
+function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(function) scalar weight_func, stopwordarray)
 {
  asarray_notfound(weights,1)
  Matched=asarray_create("real")
@@ -582,19 +680,20 @@ function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(fun
  for (i=1; i<=rows(shortkeys); i++)
  {
   curkey=shortkeys[i,1]
-  if (asarray_contains(longindex, curkey))
-  {
-   A=asarray(longindex, curkey)
-   for (j=1; j<=rows(A); j++)
+  if (asarray_contains(stopwordarray, curkey)==0)
+   if (asarray_contains(longindex, curkey))
    {
-    curwgt=(*weight_func)(asarray(weights,curkey))
-    curnum = asarray(shortarray, curkey) * A[j,2] * (curwgt^2)
-    if (asarray_contains(Matched, A[j,1]))
-     asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + curnum))
-    else
-     asarray(Matched, A[j,1],curnum)
+    A=asarray(longindex, curkey)
+    for (j=1; j<=rows(A); j++)
+    {
+     curwgt=(*weight_func)(asarray(weights,curkey))
+     curnum = asarray(shortarray, curkey) * A[j,2] * (curwgt^2)
+     if (asarray_contains(Matched, A[j,1]))
+      asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + curnum))
+     else
+      asarray(Matched, A[j,1],curnum)
+    }
    }
-  }
  }
  return (Matched)
 }
