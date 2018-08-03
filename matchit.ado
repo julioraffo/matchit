@@ -1,10 +1,12 @@
 /*
-ver 0.2
+ver 0.3
 
 2DO
 -----------
 - saving partial results to disk? (check after testing against large datasets)
 - saving weights & index to disk
+- orblock
+- cite reclink
 
 Coding style
 -------------
@@ -54,7 +56,7 @@ program matchit
 	confirm string variable `txtmaster'
 
 	// checks using file (variables checked when using it)
-	confirm file `using'
+	confirm file "`using'"
 
 	// checks similarity function
 	tokenize `similmethod'
@@ -120,7 +122,7 @@ program matchit
 	preserve
 	mata: IDM=st_data(.,"`idmaster'"); TXTM=st_sdata(.,"`txtmaster'")
 	di "Loading USING file: `using'"
-	use `using', clear
+	use "`using'", clear
 	confirm numeric variable `idusing'
     confirm string variable `txtusing'
 	mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
