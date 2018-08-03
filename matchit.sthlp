@@ -1,10 +1,10 @@
 {smcl}
 {smcl}
-{* *! version 1.0  sep2014}{...}
+{* *! version 1.0  march2015}{...}
 {vieweralsosee "[D] merge" "mansection D merge"}{...}
 {vieweralsosee "[D] append" "help append"}{...}
 {vieweralsosee "[D] joinby" "help joinby"}{...}
-{viewerjumpto "Top" "matchit##Top"}{...}
+{vieweralsosee "freqindex" "help freqindex"}{...}
 {viewerjumpto "Syntax" "matchit##syntax"}{...}
 {viewerjumpto "Description" "matchit##description"}{...}
 {viewerjumpto "Options" "matchit##options"}{...}
@@ -16,20 +16,66 @@
 {title:Title}
 
 {p2colset 5 18 20 2}{...}
-{p2col :Matchit {hline 2}}Matches two datasets based on similar text patterns{p_end}
+{p2col :Matchit {hline 2}}Matches two columns or two datasets based on similar text patterns{p_end}
 {p2colreset}{...}
-
 
 {marker syntax}{...}
 {title:Syntax}
 
+{p 2 15}
+{it:Data in two columns in the same dataset}
+{p_end}
+
+{p 5 15}
+{cmd:matchit} {it:varname1 varname2}
+[{it:, options}]
+{p_end}
+
+
+{p 2 15}
+{it:Data in two different datasets (with indexation)}
+{p_end}
+
 {p 5 15}
 {cmd:matchit} {it:idmaster txtmaster}
-{cmd:using} {it:{help filename}.dta} {cmd:,} {opth idu:sing(varname)} {opth txtu:sing(varname)} [{it:advanced_options}]
+{cmd:using} {it:{help filename}.dta} {cmd:,} {opth idu:sing(varname)} {opth txtu:sing(varname)} [{it:options}]
+{p_end}
+
+
+{synoptset 20 tabbed}{...}
+{synoptline}
+{syntab :}
+{synopthdr}
+{synoptline}
+{synopt :{opt sim:ilmethod(simfcn)}}
+String matching method. Default is {it:bigram}. Other built-in {it:simfcn} are:
+{it:ngram, ngram_circ, token, soundex} and {it:token_soundex}.
+{p_end}
+
+{synopt :{opt s:core(scrfcn)}}
+Specifies similarity score. Default is {it:jaccard}. Other built-in options are {it:simple} and {it:minsimple}.
+{p_end}
+
+{synopt :{opt w:eights(wgtfcn)}}
+Weighting transformation. Default is {it:noweights}. Built-in options are {it:simple, log} and {it:root}.
+{p_end}
+
+{synopt :{opt wgtf:ile(filename)}}
+Allows loading weights from a Stata file, instead of computing it from the current dataset
+(and {it:using} dataset, in the case of two-dataset setup).
+Default is not to load weights.
+{p_end}
+
+{synopt :{opt g:enerate(varname)}}
+Specifies the name for the similarity score variable.
+Default is {it:similscore}.
+{p_end}
+
 
 {marker reqopt}{...}
-{synoptset 18 tabbed}{...}
+{synoptset 20 tabbed}{...}
 {synoptline}
+{syntab :{it:Two datasets setup:}}
 {syntab :{it:Required}}
 {synopthdr}
 {synoptline}
@@ -40,7 +86,7 @@ Needs not to uniquely identify observations from {it:masterfile} (although recom
 {synopt :{it:txtmaster}}String {varname} from current file ({it:masterfile}) which will be matched to {it:txtusing}.
 {p_end}
 
-{synopt :{it:{help filename}}}Name (and path) of the Stata file to be matched ({it:usingfile}).
+{synopt : using {it:{help filename}}}Name (and path) of the Stata file to be matched ({it:usingfile}).
 {p_end}
 
 {synopt :{opth idu:sing(varname)}}Numeric {varname} from {it:usingfile}.
@@ -49,72 +95,59 @@ Needs not to uniquely identify observations from {it:usingfile} (although recomm
 
 {synopt :{opth txtu:sing(varname)}}String {varname} from {it:usingfile} which will be matched to {it:txtmaster}.
 {p_end}
+
 {synoptline}
 {marker advopt}{...}
-{synoptset 24 tabbed}{...}
+{synoptset 20 tabbed}{...}
+{syntab :{it:Two datasets setup:}}
 {syntab :{it:Advanced}}
 {synopthdr}
 {synoptline}
-{synopt :{opt sim:ilmethod(simfcn)}}
-String matching method. Default is {it:bigram}. Other built-in {it:simfcn} are:
-{it:ngram, ngram_circ, token, soundex} and {it:token_soundex}.
-{p_end}
-
-{synopt :{opt w:eights(wgtfcn)}}
-Weighting transformation. Default is {it:noweights}. Built-in options are {it:simple, log} and {it:root}.
-{p_end}
-
-{synopt :{opt s:core(scrfcn)}}
-Specifies similarity score. Default is {it:jaccard}. Other built-in options are {it:simple} and {it:minsimple}.
-{p_end}
-
 {synopt :{opt t:hreshold(num)}}
 Similarity scores to be kept in final results. Default is {it:num} = .5
-{p_end}
-
-{synopt :{opt g:enerate(varname)}}
-Specifies the name for the similarity score variable.
-Default is {it:similscore}.
 {p_end}
 
 {synopt :{opt over:ride}}
 Ignores unsaved data warning.
 {p_end}
+
 {synoptline}
 
 {marker description}{...}
 {title:Description}
 
 {pstd}
-{cmd:matchit} is a tool to join observations from the dataset currently in memory (called the {it:master} dataset)
-with those from {it:{help filename}}{it:.dta} (called the {it:using} dataset).
-The special treat of {cmd:matchit} is that datasets are joined based on string variables
-which do not necessarily need to be exactly the same.
-In more precise terms, {cmd:matchit} can perform many different string-based matching techniques,
-allowing for a {it:fuzzy} similarity between the two different text variables.
+{cmd:matchit} provides a similarity score between two different text strings
+by performing many different string-based matching techniques.
+It returns a new numeric variable ({it:similscore}) containing the similarity score, which ranges from 0 to 1.
+A {it:similscore} of 1 implies a perfect similarity according to the string matching technique chosen
+and decreases when the match is less similar.
+{it:similscore}  is a relative measure which can (and often do) change depending on the technique chosen.
 For more information on these techniques refer to Raffo & Lhuillery (2009).
 {p_end}
 
 {pstd}
-As a result, {cmd:matchit} returns a new dataset containing five variables: two from the {it:master} dataset
+These two variables can be from the same dataset or from two different ones.
+This latter option makes {cmd:matchit} a convenient tool to join observations
+when the string variables are not necessarily exactly the same.
+In other terms, it allows for the dataset currently in memory (called the {it:master} dataset)
+to be matched with {it:{help filename}}{it:.dta} (called the {it:using} dataset)
+by means of a {it:fuzzy} similarity between string variables of each dataset.
+In this case, {cmd:matchit} returns a new dataset containing five variables: two from the {it:master} dataset
 ({it:idmaster} and {it:txtmaster}), two from the {it:using} dataset ({it:idusing} and {it:txtusing})
-and a new numeric variable containing the similarity score ({it:similscore}).
-{it:similscore} ranges from 0 to 1, reflecting how similar {it:txtmaster} and {it:txtusing} are.
-A {it:similscore} of 1 implies a perfect similarity according to the string matching technique chosen
-and decreases when the match is less similar.
-This also means that it is a relative measure which can (and often do) change depending on the technique chosen.
+and the already mentioned similarity score ({it:similscore}).
 {p_end}
 
 {pstd}
 {cmd:matchit} is particularly useful in two cases:
-(1) when the two datasets have different patterns for the same string data (e.g. individual or firm names, addresses, etc.); and,
+(1) when the two columns/datasets have different patterns for the same string data (e.g. individual or firm names, addresses, etc.); and,
 (2) when one of the datasets is considerably large and it was {it:feeded} by different sources,
 making it not uniformly formatted (e.g. names or addresses in different orders).
 Joining data in cases like these may lead to several false negatives when using {help merge} or similar commands.
 {p_end}
 
 {pstd}
-{cmd:matchit} is a convenient tool to overcome this kind of problems
+{cmd:matchit} is intended for overcoming this kind of problems
 without engaging into extensive data cleaning or correction efforts.
 Take, for instance, a case like (1) where one dataset contains first and last names in separated fields,
 while the other one has just a fullname field.
@@ -127,7 +160,7 @@ if the zip or state codes were added systematically or not.
 
 {pstd}
 Please, note that {cmd:matchit} is case-sensitive.
-It also takes into account all other symbols.
+It also takes into account all other symbols (as far as Stata does).
 While data cleaning is not needed for using {cmd:matchit},
 it often implies an improvement of the similarity scores and,
 in consequence, the overall quality of the matching exercise.
@@ -139,7 +172,57 @@ inducing a negative effect on quality due to false positives.
 {marker options}{...}
 {title:Options}
 
-{dlgtab:Required Options}
+{dlgtab: Options for both syntaxes}
+
+{phang}
+{opt sim:ilmethod(simfcn)}
+explicitly declares the method to parse the two string variables into {it:Grams}.
+Default is {it:bigram}. Other built-in {it:simfcn} are: {it:token, soundex} and {it:token_soundex}.
+{p_end}
+
+{phang}
+{opt sim:ilmethod(simfcn,arg)}
+is the alternative syntax when {it:simfcn} requires an argument.
+This is the case of {it:ngram} and {it:ngram_circ},
+which allows computing 1-gram, 2-gram, 3-gram, etc. by passing {it:n} as an argument.
+For instance, {cmd:sim}({it:ngram,2}) is equivalent to {cmd: sim}({it:bigram}).
+{p_end}
+
+{phang}Check {help "matchit##table_examples":here} for an example of how each built-in {it:simfcn}
+treats strings. {p_end}
+
+{phang}
+{opt w:eights(wgtfcn)}
+specifies an specific weighting transformation for {it:Grams}.
+Default is no weights ({it:i.e.} each one weights 1).
+Built-in options are {it:simple, log} and {it:root}.
+Using weights is particularly recommended for large datasets where some {it:Grams} like {it:"Inc", "Jr", "Av"}
+are frequently found, because if not they increase the false positive matches.
+
+{phang}
+{opt wgtf:ile(filename)}
+allows loading {it:Grams'} frequencies directly from a Stata file.
+{cmd:matchit} applies the weighting transformation ({it:wgtfcn})
+selected at {it:weights()} after loading them.
+Note that no file is loaded nor weights applied
+if {it:weights()} is not explicitly stated.
+If one or more {it:grams} are missing in the selected file,
+a frequency equal to one is assumed for each of them.
+See {help freqindex} (distributed with {cmd:matchit}) to built your own frequency file.
+
+{phang}
+{opt s:core(scrfcn)}
+specifies the way to compute the similarity score.
+Default is {it:jaccard}. Other built-in options are {it:simple} and {it:minsimple}.
+
+{phang}
+{opt g:enerate(varname)}
+Specifies the name for the similarity score variable.
+Default is {it:similscore}.
+Please note that, in the case of two datasets, {cmd: matchit} renames variables
+in the final dataset if there is any naming conflict.
+
+{dlgtab:Required Options when matching two datasets}
 
 {phang}
 {opt idmaster}
@@ -169,37 +252,7 @@ declares the string {varname} from the {it:usingfile} which will be matched to {
 Duplicated values are allowed, although at the cost of losing some computational efficiency.
 
 {marker advoptions}{...}
-{dlgtab:Advanced Options}
-
-{phang}
-{opt sim:ilmethod(simfcn)}
-explicitly declares the method to parse {it:txtmaster} and {it:txtusing} into {it:Grams}.
-Default is {it:bigram}. Other built-in {it:simfcn} are: {it:token, soundex} and {it:token_soundex}.
-{p_end}
-
-{phang}
-{opt sim:ilmethod(simfcn,arg)}
-is the alternative syntax when {it:simfcn} requires an argument.
-This is the case of {it:ngram} and {it:ngram_circ},
-which allows computing 1-gram, 2-gram, 3-gram, etc. by passing {it:n} as an argument.
-For instance, {cmd:sim}({it:ngram,2}) is equivalent to {cmd: sim}({it:bigram}).
-{p_end}
-
-{phang}Check {help "matchit##table_examples":here} for an example of how each built-in {it:simfcn}
-treats strings. {p_end}
-
-{phang}
-{opt w:eights(wgtfcn)}
-specifies an specific weighting transformation for {it:Grams}.
-Default is no weights ({it:i.e.} each one weights 1).
-Built-in options are {it:simple, log} and {it:root}.
-Using weights is particularly recommended for large datasets where some {it:Grams} like {it:"Inc", "Jr", "Av"}
-are frequently found, because if not they increase the false positive matches.
-
-{phang}
-{opt s:core(scrfcn)}
-specifies the way to compute the similarity score.
-Default is {it:jaccard}. Other builtin options are {it:simple} and {it:minsimple}.
+{dlgtab: Additional options when matching two datasets}
 
 {phang}
 {opt t:hreshold(num)}
@@ -211,13 +264,6 @@ Note that: (1) this value relates to the chosen options for {it:similmethod}, {i
  (2) even if 0 is specified, returned results are based on at least one matched term ({it:Gram}).
 
 {phang}
-{opt g:enerate(varname)}
-Specifies the name for the similarity score variable.
-Default is {it:similscore}.
-Please note that {cmd: matchit} renames variables for the final dataset
-if there is any conflict.
-
-{phang}
 {opt over:ride}
 makes {cmd: matchit} ignore unsaved data warning. This is to be used with caution as {cmd:matchit} destroys the current data to return the matched combination of {it:masterfile} and {it:usingfile}.
 
@@ -226,24 +272,24 @@ makes {cmd: matchit} ignore unsaved data warning. This is to be used with cautio
 {marker examples}{...}
 {title:Examples:}
 
-{pstd}Simple syntax{p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:)}
+{pstd}Simple two-columns in one dataset syntax {p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}
 
 {pstd}Setting matching method{p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) sim(token)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) sim(ngram,3)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) sim(ngram,1)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) sim(soundex)} {p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf: sim(token)} {p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf: sim(ngram,3)} {p_end}
+
+{pstd}Setting score function{p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:s(simple)} {p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:s(minsimple)} {p_end}
+
+{pstd}Simple two-datasets syntax{p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:)}
 
 {pstd}Setting weighting method{p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(simple)} {p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(log)} {p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(root)} {p_end}
-
-{pstd}Setting score function{p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(simple)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(jaccard)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(minsimple)} {p_end}
 
 {synoptline}
 
@@ -326,8 +372,9 @@ The main difference is how fast they "punish" high frequencies,
 where {it:simple} does it faster than {it:root}, which does it faster than {it:log}.
 However, in practice, there are more differences between using or not weights
 than among the three computation strategies.
-Note that {cmd:matchit} computes the weights based on frequencies found
-in both the {it:masterfile} and {it:usingfile}.
+Note that {cmd:matchit} computes the weights based on frequencies found in both string variables,
+regardless if they are found in the same or in two different datasets
+(i.e. the {it:masterfile} and the {it:usingfile}).
 {p_end}
 
 
@@ -362,7 +409,7 @@ instead of just counts of {it:grams}.
 {p_end}
 
 {marker tips}{...}
-{title:Some useful tips when using matchit:}
+{title:Some useful tips when using matchit with two the datasets:}
 
 {phang}1) While {cmd:matchit} replicates the most standard use of {help merge} command
 (i.e. intersection _merge = 3),
