@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  march2015}{...}
+{* *! version 1.1  April 2016}{...}
 {vieweralsosee "[D] merge" "mansection D merge"}{...}
 {vieweralsosee "[D] append" "help append"}{...}
 {vieweralsosee "[D] joinby" "help joinby"}{...}
@@ -59,17 +59,10 @@ Specifies similarity score. Default is {it:jaccard}. Other built-in options are 
 Weighting transformation. Default is {it:noweights}. Built-in options are {it:simple, log} and {it:root}.
 {p_end}
 
-{synopt :{opt wgtf:ile(filename)}}
-Allows loading weights from a Stata file, instead of computing it from the current dataset
-(and {it:using} dataset, in the case of two-dataset setup).
-Default is not to load weights.
-{p_end}
-
 {synopt :{opt g:enerate(varname)}}
 Specifies the name for the similarity score variable.
 Default is {it:similscore}.
 {p_end}
-
 
 {marker reqopt}{...}
 {synoptset 20 tabbed}{...}
@@ -98,17 +91,43 @@ Needs not to uniquely identify observations from {it:usingfile} (although recomm
 {synoptline}
 {marker advopt}{...}
 {synoptset 20 tabbed}{...}
-{syntab :{it:Two datasets setup:}}
 {syntab :{it:Advanced}}
 {synopthdr}
 {synoptline}
+
+{synopt :{opt wgtf:ile(filename)}}
+Allows loading weights from a Stata file, instead of computing it from the current dataset
+(and {it:using} dataset, in the case of two-dataset setup).
+Default is not to load weights.
+{p_end}
+
+{synopt :{opt ti:me}}
+Outputs time stamps during the execution.
+To be used for benchmarking purposes.
+{p_end}
+
+{synopt :{opt f:lag(step)}}
+Controls how often {cmd:matchit} reports back to the output screen.
+Only really useful for optimizing indexation by trying different {it:simfcn}.
+Default is {it:step} = 20 (percent).
+{p_end}
+
+{syntab :{it:Only for two datasets syntax:}}
+
 {synopt :{opt t:hreshold(num)}}
-Similarity scores to be kept in final results. Default is {it:num} = .5
+Similarity scores to be kept in final results.
+Default is {it:num} = .5.
 {p_end}
 
 {synopt :{opt over:ride}}
 Ignores unsaved data warning.
 {p_end}
+
+{synopt :{opt di:agnose}}
+Reports a preliminary analysis about indexation.
+To be used for optimizing indexation by cleaning original data and trying different {it:simfcn}.
+{p_end}
+
 
 {synoptline}
 
@@ -225,6 +244,20 @@ Default is {it:similscore}.
 Please note that, in the case of two datasets, {cmd: matchit} renames variables
 in the final dataset if there is any naming conflict.
 
+{phang}
+{opt f:lag(step)}
+Controls how often {cmd:matchit} reports back to the output screen.
+It affects the percent reported for both matching of columns or  datasets
+Only really useful for optimizing indexation by trying different {it:simfcn}.
+Default is {it:step} = 20 (percent)
+{p_end}
+
+{phang}
+{opt ti:me}
+Outputs time stamps during the execution.
+To be used for benchmarking purposes.
+{p_end}
+
 {dlgtab:Required Options when matching two datasets}
 
 {phang}
@@ -254,6 +287,7 @@ A practical reason to avoid this suggestion is the case where there are alternat
 declares the string {varname} from the {it:usingfile} which will be matched to {it:txtmaster}.
 Duplicated values are allowed, although at the cost of losing some computational efficiency.
 
+
 {marker advoptions}{...}
 {dlgtab: Additional options when matching two datasets}
 
@@ -265,10 +299,35 @@ Default is .5.
 Note that: (1) this value relates to the chosen options for {it:similmethod}, {it:weights} and
 {it:score};
  (2) even if 0 is specified, returned results are based on at least one matched term ({it:Gram}).
+{p_end}
 
 {phang}
 {opt over:ride}
 makes {cmd: matchit} ignore unsaved data warning. This is to be used with caution as {cmd:matchit} destroys the current data to return the matched combination of {it:masterfile} and {it:usingfile}.
+{p_end}
+
+{phang}
+{opt di:agnose}
+reports a preliminary analysis about indexation.
+To be used for optimizing indexation by cleaning original data and trying different {it:simfcn}.
+First, it reports a list of the top 20 most frequent {it:grams} (which depend on the chosen {it:simfcn}) from both the Master and Using files.
+{it:Grams} scoring a higher percent will increase the likelihood of more strings being compared,
+especially if they score high in both lists.
+This list provides a good starting point for identifying {it:grams} that are less informative, making them good candidates for removal.
+For instance, {it:Inc.}, {it:Corporation}, {it:University}, {it:Mr.}, {it:Ms.}, {it:Jr.}, {it:Street}, or {it:Avenue}
+are terms frequently found in datasets which will be of limited use for the matching procedure.
+Second, it performs an overall assessment of the matching procedure about to be used, reporting:
+(a) total pairs being compared (observations in master file x those in the using file);
+(b) a rough estimation of the maximum reduction (in percent) which could be obtained
+by the {cmd:matchit} indexation (based on the underlying data and the chosen {it:simfcn}); and,
+(c) a list of the top 20 {it:grams} which have the greatest negative impact to the indexation performance.
+In order to increase the speed of {cmd:matchit} user should reduce the size of (a) or reduce the percent reported in (b).
+The latter can be achieved by analyzing the results in (c) and removing those grams with higher scores.
+It is worth noting that values from (b) are estimated and final results may differ.
+Typically, they provide an upper bound, implying that final results should be lower
+(although in some very particular cases it may actually get better).
+{p_end}
+
 
 {synoptline}
 
@@ -305,30 +364,30 @@ makes {cmd: matchit} ignore unsaved data warning. This is to be used with cautio
 
 {pstd} {it:Vectorial decomposition algorithms} (such as N-Gram, Token, etc) basically compares the elements of two strings.
 The N-gram algorithm decomposes the text string into elements of N characters ({it:grams}) using a moving-window
-basis. As depicted as follows, a 3-gram decomposition of �Smith, John� and �Smit, John� have nine and eight 3-grams, respectively,
+basis. As depicted as follows, a 3-gram decomposition of Smith, John and Smit, John have nine and eight 3-grams, respectively,
  but they share six of them: {p_end}
 
-{phang2} {it: Smith, John} : {bf:�Smi� �mit�} {it:�ith� �th,� �h, �} {bf:�, J� � Jo� �Joh� �ohn�} {p_end}
-{phang2} {it: Smit, John} : {bf:�Smi� �mit�} {it: �it,� �t, �} {bf:�, J� � Jo� �Joh� �ohn�}{p_end}
+{phang2} {it: Smith, John} : {bf:Smi mit} {it:ith th, h, } {bf:, J  Jo Joh ohn} {p_end}
+{phang2} {it: Smit, John} : {bf:Smi mit} {it: it, t, } {bf:, J  Jo Joh ohn}{p_end}
 
-{pstd}Similarly,  a 3-gram decomposition of �John Smith� has eight 3-grams and shares five of them with �Smith, John�
-({it:John Smith} : {bf:�Joh� �ohn�} {it:�hn � �n S� � Sm�} {bf:�Smi� �mit� �ith�}). This exemplifies how
+{pstd}Similarly,  a 3-gram decomposition of John Smith has eight 3-grams and shares five of them with Smith, John
+({it:John Smith} : {bf:Joh ohn} {it:hn  n S  Sm} {bf:Smi mit ith}). This exemplifies how
 {it:vectorial decomposition algorithms} are particularly suitable when facing permutation problems in the data. {p_end}
 
 {pstd}However, {it:vectorial decomposition algorithms} do not need to have a moving-window strucutre. For instance,
 the {it:token} algorithm splits a text string simply by its blank spaces.
-In �John Smith� there are only two elements (or {it:grams}): �John� and �Smith�.
-These match perfectly those {it:grams} from �Smith John�, but only one from either �Smith, John� or �Smit John�. {p_end}
+In John Smith there are only two elements (or {it:grams}): John and Smith.
+These match perfectly those {it:grams} from Smith John, but only one from either Smith, John or Smit John. {p_end}
 
 {pstd} {it:Phonetic algorithms} (such as Soundex, Daitch-Mokotoff Soundex, NYSIIS, Double Metaphone, Caverphone, Phonix, Onca,
 Fuzzy Soundex, etc) regroup by sound proximity the substrings ({it:phonemes}) of a given string.
-For instance, the {it:soundex} algorithm converts both the strings �Smith, John� and �Smit, John� into �S532�,
-but �Smith, Peter� into �S531�. {p_end}
+For instance, the {it:soundex} algorithm converts both the strings Smith, John and Smit, John into S532,
+but Smith, Peter into S531. {p_end}
 
-{pstd} Finally, {it: Edit-distance algorithms} (such as Levenshtein, Damerau�Levenshtein, Bitap, Hamming, Boyer-Moore, etc)
+{pstd} Finally, {it: Edit-distance algorithms} (such as Levenshtein, DamerauLevenshtein, Bitap, Hamming, Boyer-Moore, etc)
 are based on the simple precept that any text string can be transformed into another by applying a given number of plain operations.
-Transforming �Smith, John� into �Smit, John� requires one deletion and the reciproque one insertion.
-While transforming �Smith, John� into �Smith, Peter� requires nine operations (four deletions and five insertions). {p_end}
+Transforming Smith, John into Smit, John requires one deletion and the reciproque one insertion.
+While transforming Smith, John into Smith, Peter requires nine operations (four deletions and five insertions). {p_end}
 
 {pstd}As today, {cmd:matchit} performs {it:Vectorial decomposition} and {it:phonetic algorithms}
 but does not perform {it:edit-distance} ones as they are not indexable.{p_end}
@@ -354,7 +413,7 @@ The different algorithms can be customized to improve their performance.
 For example, a weighting procedure can be added to the Edit transformations
 or to the N-grams and Token vector elements in order to give more relevance to
 less likely pieces of information in a text string.
-In N-gram or Token algorithms, some {it:grams} - e.g. �street� or �road� - may provide less useful
+In N-gram or Token algorithms, some {it:grams} - e.g. street or road - may provide less useful
 information than rare ones simply because they are too common.
 {p_end}
 
@@ -415,7 +474,7 @@ instead of just counts of {it:grams}.
 {title:Some useful tips when using matchit with two the datasets:}
 
 {phang}1) While {cmd:matchit} replicates the most standard use of {help merge} command
-(i.e. intersection _merge = 3),
+(i.e. intersection _merge == 3),
 it does it less efficiently when there is no risk of false negatives. {p_end}
 
 {phang}2) After using {cmd:matchit}, the resulting dataset can be easily merged with
@@ -426,9 +485,9 @@ either the {it:master} or {it:using} datasets using the {help merge} command.{p_
 {phang2}{cmd:. merge} {it:myidvar} {bf: using} {it:mymasterfile.dta} {p_end}
 {phang2}{cmd:. merge} {it:usingidvar} {bf: using} {it:myusingfile.dta} {p_end}
 
-{phang}3)It does not matter in substance which file
-is used as {it:master} or {it:using} file.
+{phang}3)It does not matter in substance which file is used as {it:master} or {it:using} file.
 It just matters in the order of the columns in the resulting dataset.
+The computational time is likely to differ, but these differences are not found substantive (around 5% or less).
 {p_end}
 
 {phang}4)Observations in the resulting dataset are not sorted.
@@ -481,13 +540,13 @@ IEEE International Conference on Data Mining (ICDM), Hong Kong, December.
 {pstd}
 Hodge, V.J., Austin, J., 2003.
 A comparison of standard spell checking algorithms and a novel binary neural approach.
-IEEE Transactions on Knowledge and Data Engineering 15 (5), 1073�1081.
+IEEE Transactions on Knowledge and Data Engineering 15 (5), 10731081.
 {p_end}
 
 {pstd}
 Pfeifer, U., Poersch, T., Fuhr, N., 1996.
 Retrieval effectiveness of proper name search methods.
-Information Processing & Management 32 (6), 667�679.
+Information Processing & Management 32 (6), 667679.
 {p_end}
 
 {pstd}
@@ -498,14 +557,14 @@ Encyclopedia of Data Warehousing and Mining, 2nd ed. IDEA Group Publishing.
 
 {pstd}
 Raffo, J., & Lhuillery, S. (2009).
-How to play the �Names Game�: Patent retrieval comparing different heuristics.
-Research Policy, 38(10), 1617�1627. doi:10.1016/j.respol.2009.08.001
+How to play the Names Game: Patent retrieval comparing different heuristics.
+Research Policy, 38(10), 16171627. doi:10.1016/j.respol.2009.08.001
 {p_end}
 
 {pstd}
 Zobel, J., Dart, P., 1995.
 Finding approximate matches in large lexicons.
-Software�Practice and Experience 25 (3), 331�345.
+SoftwarePractice and Experience 25 (3), 331345.
 {p_end}
 
 
