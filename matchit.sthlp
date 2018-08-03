@@ -1,6 +1,6 @@
 {smcl}
 {smcl}
-{* *! version 1.0  9jul2014}{...}
+{* *! version 1.0  sep2014}{...}
 {vieweralsosee "[D] merge" "mansection D merge"}{...}
 {vieweralsosee "[D] append" "help append"}{...}
 {vieweralsosee "[D] joinby" "help joinby"}{...}
@@ -72,6 +72,11 @@ Specifies similarity score. Default is {it:jaccard}. Other built-in options are 
 Similarity scores to be kept in final results. Default is {it:num} = .5
 {p_end}
 
+{synopt :{opt g:enerate(varname)}}
+Specifies the name for the similarity score variable.
+Default is {it:similscore}.
+{p_end}
+
 {synopt :{opt over:ride}}
 Ignores unsaved data warning.
 {p_end}
@@ -94,9 +99,9 @@ For more information on these techniques refer to Raffo & Lhuillery (2009).
 As a result, {cmd:matchit} returns a new dataset containing five variables: two from the {it:master} dataset
 ({it:idmaster} and {it:txtmaster}), two from the {it:using} dataset ({it:idusing} and {it:txtusing})
 and a new numeric variable containing the similarity score ({it:similscore}).
-{it:similscore} ranges from 0 to 1 reflecting how similar {it:txtmaster} and {it:txtusing} are.
-A {it:similscore} of 1 implies a perfect match according to the string matching technique chosen
-and decreases when the match is less perfect.
+{it:similscore} ranges from 0 to 1, reflecting how similar {it:txtmaster} and {it:txtusing} are.
+A {it:similscore} of 1 implies a perfect similarity according to the string matching technique chosen
+and decreases when the match is less similar.
 This also means that it is a relative measure which can (and often do) change depending on the technique chosen.
 {p_end}
 
@@ -115,7 +120,7 @@ Take, for instance, a case like (1) where one dataset contains first and last na
 while the other one has just a fullname field.
 The use of {cmd:matchit} allows to join the two datasets by simply combining the two fields of the first dataset
 without caring about the order of first and last names or about missing middle names.
-Similarly, a typical example of (2) is a large dataset contains addresses entered as free-text by different people.
+Similarly, a typical example of (2) is a large dataset containing addresses entered as free-text by different people.
 Using {cmd:matchit} you can join them with a more standardized source without caring
 if the zip or state codes were added systematically or not.
 {p_end}
@@ -205,6 +210,13 @@ Note that: (1) this value relates to the chosen options for {it:similmethod}, {i
  (2) even if 0 is specified, returned results are based on at least one matched term ({it:Gram}).
 
 {phang}
+{opt g:enerate(varname)}
+Specifies the name for the similarity score variable.
+Default is {it:similscore}.
+Please note that {cmd: matchit} renames variables for the final dataset
+if there is any conflict.
+
+{phang}
 {opt over:ride}
 makes {cmd: matchit} ignore unsaved data warning. This is to be used with caution as {cmd:matchit} destroys the current data to return the matched combination of {it:masterfile} and {it:usingfile}.
 
@@ -290,8 +302,8 @@ According to the surveyed literature, hybrid matching algorithms have even bette
 {pstd}
 The different algorithms can be customized to improve their performance.
 For example, a weighting procedure can be added to the Edit transformations
-or to the N-grams and Token vector elements in order to give more importance to observations or changes
-that are less likely to occur in a text.
+or to the N-grams and Token vector elements in order to give more relevance to
+less likely pieces of information in a text string.
 In N-gram or Token algorithms, some {it:grams} - e.g. �street� or �road� - may provide less useful
 information than rare ones simply because they are too common.
 {p_end}
@@ -313,7 +325,8 @@ The main difference is how fast they "punish" high frequencies,
 where {it:simple} does it faster than {it:root}, which does it faster than {it:log}.
 However, in practice, there are more differences between using or not weights
 than among the three computation strategies.
-Note that {cmd:matchit} computes the weights based on the frequencies found in the {it:usingfile} only.
+Note that {cmd:matchit} computes the weights based on frequencies found
+in both the {it:masterfile} and {it:usingfile}.
 {p_end}
 
 
@@ -335,18 +348,24 @@ All these should range between 0 and 1, reflecting none to perfect similarity
 (always relative to the similarity function chosen).
 As apparent from the formulas, all these are exactly the same if {it:s1} and {it:s2} are equal.
 In simple terms, the major difference among these is how they treat the dissimilar part of the longer string.
-{it:Jaccard} and {it:simple} basically take a geometric and arimethic mean, respectively,
+{it:Jaccard} and {it:simple} basically take a geometric and arimethic mean, respectively;
 while {it:minsimple} considers only the shorter string.
 If one of the two sources has unuseful information in the string,
 {it:minsimple} might be preferred at the expense of increasing the false positive results.
 {p_end}
 
+{pstd}
+In the case of using any weighting option,
+the previous formulas still hold but {it:m}, {it:s1} and {it:s2} are weighted
+instead of just counts of {it:grams}.
+{p_end}
 
 {marker tips}{...}
 {title:Some useful tips when using matchit:}
 
-{phang}1) While {cmd:matchit} replicates the most standard use of {help merge} command,
-it will do it less efficiently when there is no risk of false negatives. {p_end}
+{phang}1) While {cmd:matchit} replicates the most standard use of {help merge} command
+(i.e. intersection _merge = 3),
+it does it less efficiently when there is no risk of false negatives. {p_end}
 
 {phang}2) After using {cmd:matchit}, the resulting dataset can be easily merged with
 either the {it:master} or {it:using} datasets using the {help merge} command.{p_end}
@@ -356,9 +375,23 @@ either the {it:master} or {it:using} datasets using the {help merge} command.{p_
 {phang2}{cmd:. merge} {it:myidvar} {bf: using} {it:mymasterfile.dta} {p_end}
 {phang2}{cmd:. merge} {it:usingidvar} {bf: using} {it:myusingfile.dta} {p_end}
 
-{phang}3)If you intend to use weights, always have your longer file as {it:myusingfile.dta}.{p_end}
+{phang}3)It does not matter in substance which file
+is used as {it:master} or {it:using} file.
+It just matters in the order of the columns in the resulting dataset.
+{p_end}
 
-{phang}4)You can customize {cmd:matchit} by adding your own similarity, weighting or scoring functions
+{phang}4)Observations in the resulting dataset are not sorted.
+This can be easily done by making use of sorting commands such as
+{cmd:sort} or {cmd:gsort} after running {cmd:matchit}.
+Often, it is useful to sort the resulting dataset from the higher similarity score
+to the lower one in order to establish the best threshold.
+{p_end}
+
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta}
+{bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:)} {p_end}
+{phang2}{cmd:. gsort} {bf:-}{it:similscore}{p_end}
+
+{phang}5)You can customize {cmd:matchit} by adding your own similarity, weighting or scoring functions
 and benefit from its indexing and other features.
 All these are coded in Mata as functions with relatively simple structure and naming conventions, which are described as follows:
 {p_end}
@@ -384,7 +417,43 @@ The naming convention is to have {it:score_} before the name of your function.{p
 {title:References}
 
 {pstd}
-Raffo, J., & Lhuillery, S. (2009). How to play the �Names Game�: Patent retrieval comparing different heuristics. Research Policy, 38(10), 1617�1627. doi:10.1016/j.respol.2009.08.001
+Christen, P., 2006.
+A comparison of personal name matching: techniques and practical issues.
+Proceedings of the Workshop on Mining Complex Data (MCD).
+IEEE International Conference on Data Mining (ICDM), Hong Kong, December.
+{p_end}
+
+{pstd}
+Hodge, V.J., Austin, J., 2003.
+A comparison of standard spell checking algorithms and a novel binary neural approach.
+IEEE Transactions on Knowledge and Data Engineering 15 (5), 1073�1081.
+{p_end}
+
+{pstd}
+Pfeifer, U., Poersch, T., Fuhr, N., 1996.
+Retrieval effectiveness of proper name search methods.
+Information Processing & Management 32 (6), 667�679.
+{p_end}
+
+{pstd}
+Phua, C., Lee, V., Smith-Miles, K., 2007.
+The personal name problem and a recommended data mining solution.
+Encyclopedia of Data Warehousing and Mining, 2nd ed. IDEA Group Publishing.
+{p_end}
+
+{pstd}
+Raffo, J., & Lhuillery, S. (2009).
+How to play the �Names Game�: Patent retrieval comparing different heuristics.
+Research Policy, 38(10), 1617�1627. doi:10.1016/j.respol.2009.08.001
+{p_end}
+
+{pstd}
+Zobel, J., Dart, P., 1995.
+Finding approximate matches in large lexicons.
+Software�Practice and Experience 25 (3), 331�345.
+{p_end}
+
+
 
 {marker table_examples}{...}
 {title:Examples for "John Smith":}
