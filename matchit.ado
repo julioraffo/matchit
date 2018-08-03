@@ -1,5 +1,5 @@
 /*
-ver 0.3
+ver 0.4
 
 2DO
 -----------
@@ -436,5 +436,18 @@ function score_simple(real scalar numerator, real scalar denom1, real scalar den
     return (0)
   else
     return (2*numerator/denom)
+ }
+end
+
+capture mata: mata drop score_minsimple()
+mata:
+function score_minsimple(real scalar numerator, real scalar denom1, real scalar denom2)
+ {
+  denom=denom1*denom2
+  vecdenom = denom1, denom2
+  if (denom<=0)
+    return (0)
+  else
+    return (numerator/min(vecdenom))
  }
 end
