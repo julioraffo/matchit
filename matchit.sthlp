@@ -60,7 +60,7 @@ Weighting transformation. Default is no weights. Built-in options are {it:simple
 {p_end}
 
 {synopt :{opt s:core(scrfcn)}}
-Specifies similarity score. Default is {it:jaccard}. Other built-in option is {it:simple}.
+Specifies similarity score. Default is {it:jaccard}. Other built-in option are {it:simple} and {it:minsimple}.
 {p_end}
 
 {synopt :{opt t:hreshold(num)}}
@@ -200,3 +200,4 @@ makes {cmd: matchit} ignore unsaved data warning. This is to be used with cautio
 {pstd}Setting score function{p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(simple)} {p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(jaccard)} {p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) s(minsimple)} {p_end}
