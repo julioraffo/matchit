@@ -1,80 +1,88 @@
-*! 0.7 J.D. Raffo September 2014
-
-/* 2DO
------------
-- orblock
-- cite reclink
-
-Coding style
--------------
-ALLCAPS = Mata elements
- IDM = Vector of masterfile ids
- TXTM = Vector of masterfile txts
- IDU = Vector of usingfile ids
- TXTU = Vector of usingfile txts
-    INDEXU = Array of Indexed Grams for usingfile
-    INDEXM = Array of Indexed Grams for masterfile
- WGTINDEX = Array of weights for Grams in INDEXU (i.e. usingfile)
- WGTU = Array of total module (weights) for strings in TXTU, keys match those from IDU.
- WGTM = Array of total module (weights) for strings in TXTM, keys match those from IDM.
- RESNUM = Matrix[.,3] with resulting idmaster, idusing & score
- RESTXT = Matrix[.,2] with resulting txtmaster & txtusing
- THRESHOLD = scalar with similarity threshold
- MPART = scalar with amount of partitions for master index partitions
- UPART = scalar with amount of partitions for using index partitions
-
-
-simf_* = similarity Gram pattern function (e.g. simf_bigram, simf_token)
-         Takes a string (and optional arguments) and returns an array of Grams with their frequencies.
-
-weight_* = weighting function (e.g. simf_bigram, simf_token)
-           takes a frequency (real) returns the desired weight (real)
-
-*_p = pointer to *
- similfunc_p = pointer to similarity Gram pattern mata function
- weightfunc_p = pointer to weighting mata function
- scorefunc_p = pointer to score computing function
-
-*/
+*! 0.8 J.D. Raffo March 2015
+mata:
+mata clear
+end
 
 capture program drop matchit
 program matchit
  version 12
- syntax varlist(min=2 max=2) using/ ///
-   , IDUsing(name) TXTUsing(name) ///
+ syntax varlist(min=2 max=2) ///
+  [using/] ///
+   [, IDUsing(name) TXTUsing(name)] ///
    [SIMilmethod(string)] ///
-   [Weights(string)] ///
+   [Weights(string)] [WGTFile(string)] ///
    [Score(string)] ///
    [Threshold(real .5)] ///
    [OVERride] ///
-   [Generate(string)] ///
-   [MPartitions(integer 1)] ///
-   [UPartitions(integer 0)]
+   [Generate(string)]
 
  // setup //////////////////////////////////////
- tokenize `varlist'
- local idmaster `1'
- local txtmaster `2'
- tokenize `similmethod'
+ if ("`using'"=="") {
+  local match "columns"
+  tokenize `varlist'
+  local str1 `1'
+  local str2 `2'
+  di "matching columns `str1' and `str2'"
+  confirm string variable `str1'
+  confirm string variable `str2'
+ }
+ else {
+  local match "index"
+  tokenize `varlist'
+  local idmaster `1'
+  local txtmaster `2'
+  di "Matching current dataset with `using'"
+  confirm numeric variable `idmaster'
+  confirm string variable `txtmaster'
+  confirm file "`using'"
+
+  // checks if ok to wipe master dataset
+  qui describe
+  if (r(changed)>0 & "`override'"=="") {
+   di " "
+   di "(!) Unsaved changes will be destroyed after running matching procedure."
+   di "    (note: use OVERRIDE option to bypass warning)"
+   exit
+  }
+  capture mata: THRESHOLD=`threshold'
+  if (_rc!=0) {
+   di "`threshold' does not seem a valid threshold."
+   error _rc
+  }
+ }
+ local wgtloaded=0
+ if ("`weights'"=="") local weights "noweights"
+ if ("`weights'"!="noweights") {
+   capture mata: weightfunc_p=&weight_`weights'()
+   if (_rc!=0) {
+    di "`weights' not found as a weights function. Check spelling."
+    error _rc
+   }
+   if ("`wgtfile'"!=""){
+    confirm file "`wgtfile'"
+	preserve
+	use "`wgtfile'", clear
+	mata: WFREQ=st_data(.,"freq"); WGRAM=st_sdata(.,"grams"); WGTARRAY=asarray_create()
+	mata: load_weights_to_array(WGTARRAY, WGRAM, WFREQ)
+	local wgtloaded=1
+	restore
+   }
+ }
+ //
+ tokenize "`similmethod'" , parse(",")
  if ("`1'"!="") {
   local similfunc `1'
   macro shift
   local similargs `*'
  }
  else local similfunc "bigram"
- if ("`score'"=="") local score "jaccard"
-
- // checks master vars
- confirm numeric variable `idmaster'
- confirm string variable `txtmaster'
- confirm file "`using'"
  capture mata: similfunc_p=&simf_`similfunc'()
  if (_rc!=0) {
   di "`similfunc' not found as a similarity function. Check spelling."
   error _rc
  }
  if ("`similargs'"!="") {
-  local args_plugin ",`similargs'"
+  local args_plugin "`similargs'"
   local testtxt "This is just a test"
   capture mata: TEST=(*similfunc_p)("`testtxt'"`args_plugin')
   if (_rc!=0) {
@@ -85,303 +93,300 @@ program matchit
    set more off
   }
  }
- if ("`weights'"=="") local weights "noweights"
- if ("`weights'"!="noweights") {
-  capture mata: weightfunc_p=&weight_`weights'()
-  if (_rc!=0) {
-   di "`weights' not found as a weights function. Check spelling."
-   error _rc
-  }
- }
+ if ("`score'"=="") local score "jaccard"
  capture mata: scorefunc_p=&score_`score'()
  if (_rc!=0) {
   di "`score' not found as a score computing function. Check spelling."
   error _rc
  }
- capture mata: THRESHOLD=`threshold'
- if (_rc!=0) {
-  di "`threshold' does not seem a valid threshold."
+  // setup ends ///////////////
+ // matching columns
+ if ("`match'"=="columns") {
+  preserve
+  if ("`generate'"=="") local similscore "similscore"
+ else local similscore "`generate'"
+ cap gen double `similscore'=.
+  if (_rc!=0) {
+   di "`similscore' does not seem a valid name for the score variable."
   error _rc
- }
- capture mata: MPART=`mpartition'
- if (_rc!=0) {
-  di "`mpartition' does not seem a valid partition value."
-  error _rc
- }
- capture mata: UPART=`upartition'
- if (_rc!=0) {
-  di "`upartition' does not seem a valid partition value."
-  error _rc
- }
- // checks if ok to wipe master dataset
- qui describe
- if (r(changed)>0 & "`override'"=="") {
-  di " "
-  di "(!) Unsaved changes will be destroyed after running matching procedure."
-  di "    (note: use OVERRIDE option to bypass warning)"
+  }
+  if ("`weights'"!="noweights") {
+   if (`wgtloaded'==0){
+    tempvar myvar
+	gen `myvar'=1
+	mata: WGTARRAY=asarray_create()
+	freqindex `myvar' `str1', keepm incm(WGTARRAY) sim(`similmethod') nost
+	freqindex `myvar' `str2', keepm incm(WGTARRAY) sim(`similmethod') nost
+	drop `myvar'
+   }
+   mata: col_core_computing_wgt("`str1' `str2'","`similscore'",scorefunc_p, weightfunc_p, WGTARRAY, similfunc_p`args_plugin')
+  }
+  else {
+   mata: col_core_computing("`str1' `str2'","`similscore'",scorefunc_p, similfunc_p`args_plugin')
+  }
+  restore, not
   exit
  }
- // setup ends ///////////////
+ // Matching datasets
  // Loading data to mata
  preserve
- di "Generating `mpartition' partition(s) from master file"
- local interval= ceil(_N/`mpartition')
- if (`mpartition'<1) mata: IDM=st_data(.,"`idmaster'"); TXTM=st_sdata(.,"`txtmaster'")
- else forvalues i = 1(1)`mpartition' {
-  local pstart = (`i'-1)*`interval'+1
-  local pend = `i'*`interval'
-  if (`pend'>_N) local pend=_N
-  mata: IDM`i'=st_data((`pstart',`pend'),"`idmaster'"); TXTM`i'=st_sdata((`pstart',`pend'),"`txtmaster'")
+ if ("`weights'"!="noweights" & `wgtloaded'==0){
+   capture mata: WGTARRAY=asarray_create()
+   freqindex `idmaster' `txtmaster', keepm incm(WGTARRAY) sim(`similmethod') nost
+   mata: IDM=IDW; TXTM=TXTW
+   mata: mata drop IDW TXTW
   }
+ else {
+  mata: IDM=st_data(.,"`idmaster'"); TXTM=st_sdata(.,"`txtmaster'")
+ }
  di "Loading USING file: `using'"
  use "`using'", clear
  confirm numeric variable `idusing'
-    confirm string variable `txtusing'
- di "Generating `upartition' partition(s) from using file"
- local interval= ceil(_N/`upartition')
- if (`upartition'<1) mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
- else forvalues i = 1(1)`upartition'{
-  local pstart = (`i'-1)*`interval'+1
-  local pend = `i'*`interval'
-  if (`pend'>_N) local pend=_N
-  mata: IDU`i'=st_data((`pstart',`pend'),"`idusing'"); TXTU`i'=st_sdata((`pstart',`pend'),"`txtusing'")
-  }
- // Creating indexes
- if (`mpartition'>=1) {
-     di "Indexing MASTER file. Method: `similfunc'"
-  forvalues i = 1(1)`mpartition' {
-   mata: INDEXM`i'=index_array(IDM`i',TXTM`i',similfunc_p`args_plugin')
-  }
-    }
- if (`upartition'>=1){
-  di "Indexing USING file. Method: `similfunc'"
-  forvalues i = 1(1)`upartition' {
-   mata: INDEXU`i'=index_array(IDU`i',TXTU`i',similfunc_p`args_plugin')
-  }
- }
- // Computing index of weights
- if ("`weights'"!="noweights") {
-  di "Computing weights using: `weights'"
-  mata: WGTINDEX=asarray_create()
-  if (`mpartition'>=1) forvalues i = 1(1)`mpartition' {
-   mata: index_weights(WGTINDEX, INDEXM`i')
-  }
-  else mata: noindex_weights(WGTINDEX,TXTM,similfunc_p`args_plugin')
-  if (`upartition'>=1) forvalues i = 1(1)`upartition' {
-    mata: index_weights(WGTINDEX, INDEXU`i')
-   }
-  else mata: noindex_weights(WGTINDEX,TXTU,similfunc_p`args_plugin')
+ confirm string variable `txtusing'
+ if ("`weights'"!="noweights" & `wgtloaded'==0) {
+  freqindex `idusing' `txtusing', keepm incm(WGTARRAY) sim(`similmethod') nost
+  mata: IDU=IDW; TXTU=TXTW
+  mata: mata drop IDW TXTW
  }
  else {
-  di "No weights computed"
-  mata: WGTINDEX=asarray_create()
+  mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
  }
- // Computing (weighted) modules
- mata: asarray_notfound(WGTINDEX,1)
- if (`mpartition'>=1) {
-  di "Computing scale for MASTER partitions: " _continue
-  forvalues i = 1(1)`mpartition' {
-   di "`i'." _continue
-   mata: WGTM`i'=long_weights(IDM`i', TXTM`i', WGTINDEX, weightfunc_p, similfunc_p`args_plugin')
-   }
-  di "Done."
-  }
-  else {
-   di "Computing scale for MASTER file: " _continue
-   mata: WGTM=long_weights(IDM, TXTM, WGTINDEX, weightfunc_p, similfunc_p`args_plugin')
-   di "Done."
-  }
- if (`upartition'>=1) {
-  di "Computing scale for USING partitions: " _continue
-  forvalues i = 1(1)`upartition' {
-   di "`i'..." _continue
-   mata: WGTU`i'=long_weights(IDU`i', TXTU`i', WGTINDEX, weightfunc_p, similfunc_p`args_plugin')
-  }
-  di "Done."
- }
- else {
-  di "Computing scale for USING file: " _continue
-  mata: WGTU=long_weights(IDU, TXTU, WGTINDEX, weightfunc_p, similfunc_p`args_plugin')
-  di "Done."
- }
- // intersection
- di "Computing scores"
- mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
- if (`mpartition'>=1) forvalues i = 1(1)`mpartition' {
-   if (`upartition'>=1) forvalues j = 1(1)`upartition' { // MPART>0 UPART>0
-     mata: INDEXNUM=asarray_create()
-     mata: INDEXNUM=asarray_index_intersect(INDEXM`i',INDEXU`j',WGTINDEX)
-     mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM`i',TXTM`i',IDU`j',TXTU`j',INDEXNUM,WGTM`i',WGTU`j',scorefunc_p)
-   }
-   else { // MPART>0 UPART=0
-    mata: INDEXNUM=asarray_create()
-    mata: INDEXNUM=asarray_index_intersect(INDEXM`i',INDEXU`j',WGTINDEX)
-    mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM`i',TXTM`i',IDU`j',TXTU`j',INDEXNUM,WGTM`i',WGTU`j',scorefunc_p)
-    mata: WGTU=long_weights(IDU, TXTU, WGTINDEX, weightfunc_p, similfunc_p`args_plugin')
-   }
- }
- else if (`upartition'>=1) forvalues j = 1(1)`upartition' { // MPART=0 UPART>0
-   mata: INDEXNUM=asarray_create()
-   mata: INDEXNUM=asarray_index_intersect(INDEXU`j',INDEXM`i',WGTINDEX)
-  }
- else { // MPART=0 UPART=0
- }
- }
+ clear
+
+// Creating index for USING
+ di "Indexing USING file. Method: `similfunc'"
+ mata: INDEXU=asarray_create()
+ mata: WGTU=asarray_create("real")
+ if ("`weights'"!="noweights") mata: index_array_wgt(INDEXU, IDU, TXTU, WGTU, weightfunc_p, WGTARRAY, similfunc_p`args_plugin')
+ else mata: index_array(INDEXU, IDU, TXTU, WGTU, similfunc_p`args_plugin')
 
  di "Computing results"
  mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
- mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXNUM,WGTM,WGTU,scorefunc_p)
+ if ("`weights'"!="noweights")  mata: core_computing_wgt(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTARRAY,scorefunc_p, weightfunc_p, similfunc_p`args_plugin')
+ else  mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,scorefunc_p, similfunc_p`args_plugin')
 
-    di "Saving results"
- // checks vars naming
- if ("`generate'"=="") local similscore "similscore"
+
+ di "Saving results"
+// checks vars naming
+if ("`generate'"=="") local similscore "similscore"
  else local similscore "`generate'"
 
- local i = 1
- local vartemp "`idusing'"
- while ("`idmaster'"=="`vartemp'" | "`txtmaster'"=="`vartemp'") {
-  local i = `i'+1
-  local vartemp "`idusing'_`i'"
+local i =1
+local vartemp = "`idusing'"
+while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'"){
+ local vartemp "`idusing'`i'"
+ local i = `i'+1
  }
- local idusing "`vartemp'"
- local i = 1
- local vartemp "`txtusing'"
- while ("`txtmaster'"=="`vartemp'" | "`idmaster'"=="`vartemp'" | "`idusing'"=="`vartemp'" ) {
-  local i = `i'+1
-  local vartemp "`txtusing'_`i'"
+local idusing = "`vartemp'"
+local i =1
+local vartemp = "`txtusing'"
+while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'"){
+ local vartemp "`txtusing'`i'"
+ local i = `i'+1
  }
- local txtusing "`vartemp'"
- local i = 1
- local vartemp "`similscore'"
- while ("`txtmaster'"=="`vartemp'" | "`idmaster'"=="`vartemp'" | "`idusing'"=="`vartemp'" | "`txtusing'"=="`vartemp'") {
-  local i = `i'+1
-  local vartemp "`similscore'_`i'"
+local txtusing = "`vartemp'"
+local i =1
+local vartemp = "`similscore'"
+while ("`vartemp'"=="`idmaster'"| "`vartemp'"=="`txtmaster'" | "`vartemp'"=="`idusing'" | "`similscore'"=="`txtusing'"  ){
+ local vartemp "`similscore'`i'"
+ local i = `i'+1
  }
- local similscore "`vartemp'"
+local similscore = "`vartemp'"
 
-
- if ("`idmaster'"=="`idusing'" | "`txtmaster'"=="`idusing'"){
-  di "Using idvar `idusing' renamed to u_`idusing'"
-  local idusing "u_`idusing'"
- }
- if ("`txtmaster'"=="`txtusing'" | "`idmaster'"=="`txtusing'"){
-  di "Using textvar `txtusing' renamed to u_`txtusing'"
-  local txtusing "u_`txtusing'"
- }
- if ("`similscore'"=="`idusing'" |"`similscore'"=="`idusing'" | "`txtmaster'"=="`idusing'"){
-  di "Using idvar `idusing' renamed to u_`idusing'"
-  local idusing "u_`idusing'"
- }
- mata: newvars=st_addvar(("double","str244","double","str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
- mata: st_addobs(rows(RESNUM)); st_store(.,("`idmaster'","`idusing'","`similscore'"), RESNUM); st_sstore(.,("`txtmaster'", "`txtusing'"), RESTXT)
+ mata: newvars=st_addvar(("double", "str244","double", "str244","double"),("`idmaster'", "`txtmaster'", "`idusing'", "`txtusing'", "`similscore'"))
+ mata: st_addobs(rows(RESNUM)); st_store(.,("`idmaster'","`idusing'","similscore"), RESNUM); st_sstore(.,("`txtmaster'", "`txtusing'"), RESTXT)
  di "Done!"
  qui compress
  restore, not
 end
 
-// computing scores
-capture mata: mata drop core_computing()
+// computing scores columns
+capture mata: mata drop col_core_computing_wgt()
 mata:
-void core_computing(resultsnum, resultstxt, Threshold, idvar, textvar, usingidvar, usingtextvar, intersectarray, weightmaster, weightusing, pointer(function) scalar score_func)
+void col_core_computing_wgt(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func, pointer(function) scalar wgt_func, weightarray, pointer(function) scalar token_func, | arg_token_func)
 {
- NumeratorIndex=asarray_keys(intersectarray)
- Qrows=rows(NumeratorIndex)
+ st_sview(TXT=.,.,textvars)
+ st_view(RESNUM=.,.,scorevar)
+ Qrows=rows(TXT); flag=0;
  for (i=1; i<=Qrows; i++)
  {
-  Similscore=(*score_func)(asarray(intersectarray, (NumeratorIndex[i,1],NumeratorIndex[i,2])),asarray(weightmaster, NumeratorIndex[i,1]),asarray(weightusing, NumeratorIndex[i,2]))
-  if (Similscore>=Threshold)
+  counter=i*100/Qrows
+  if (counter>flag)
   {
-   resultsnum = resultsnum \ (idvar[NumeratorIndex[i,1],1], usingidvar[NumeratorIndex[i,2],1], Similscore)
-   resultstxt = resultstxt \ (textvar[NumeratorIndex[i,1],1], usingtextvar[NumeratorIndex[i,2],1])
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+   flag=flag+20
+  }
+  T1=asarray_create()
+  if (args()>=7) T1=(*token_func)(TXT[i,1], arg_token_func); else T1=(*token_func)(TXT[i,1])
+  D1=asarray_sumw(T1, weightarray, wgt_func)
+  T2=asarray_create()
+  if (args()>=7) T2=(*token_func)(TXT[i,2], arg_token_func); else T2=(*token_func)(TXT[i,2])
+  D2=asarray_sumw(T2, weightarray, wgt_func)
+  Num=asarray_vecprod_wgt(T1,T2, weightarray, wgt_func)
+  RESNUM[i,1]= (*score_func)(Num,D1,D2)
+ }
+ stata(`"di "100%."')
+}
+end
+
+capture mata: mata drop col_core_computing()
+mata:
+void col_core_computing(string scalar textvars, string scalar scorevar, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
+{
+ st_sview(TXT=.,.,textvars)
+ st_view(RESNUM=.,.,scorevar)
+ Qrows=rows(TXT); flag=0;
+ for (i=1; i<=Qrows; i++)
+ {
+  counter=i*100/Qrows
+  if (counter>flag)
+  {
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+   flag=flag+20
+  }
+  T1=asarray_create()
+  if (args()>=5) T1=(*token_func)(TXT[i,1], arg_token_func); else T1=(*token_func)(TXT[i,1])
+  D1=asarray_sumsq(T1)
+  T2=asarray_create()
+  if (args()>=5) T2=(*token_func)(TXT[i,2], arg_token_func); else T2=(*token_func)(TXT[i,2])
+  D2=asarray_sumsq(T2)
+  Num=asarray_vecprod(T1,T2)
+  RESNUM[i,1]= (*score_func)(Num,D1,D2)
+ }
+ stata(`"di "100%."')
+}
+end
+
+capture mata: mata drop asarray_sumsq()
+mata:
+function asarray_sumsq(myarray)
+{
+ myscore=0
+ for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc)) myscore=myscore+asarray_contents(myarray,loc)^2
+ return (myscore)
+}
+end
+
+capture mata: mata drop asarray_sumw()
+mata:
+  function asarray_sumw(shortarray, weights, pointer(function) scalar wgt_func)
+  {
+   asarray_notfound(weights,1)
+   Sumw=0
+   for (loc=asarray_first(shortarray); loc!=NULL; loc=asarray_next(shortarray,loc))
+   {
+    A = asarray_contents(shortarray,loc) * ((*wgt_func)(asarray(weights,asarray_key(shortarray,loc))))
+	Sumw = Sumw + A^2
+   }
+   return (Sumw)
+  }
+end
+
+capture mata: mata drop asarray_vecprod_wgt()
+mata:
+function asarray_vecprod_wgt(myarray1, myarray2, weights, pointer(function) scalar wgt_func)
+{
+ curscore=0
+ for (loc=asarray_first(myarray1); loc!=NULL; loc=asarray_next(myarray1,loc))
+  {
+   mykey=asarray_key(myarray1,loc)
+   if (asarray_contains(myarray2,mykey)==1)
+   {
+    w = ((*wgt_func)(asarray(weights, mykey)))^2
+	curscore = curscore + asarray(myarray1,mykey)*asarray(myarray2,mykey)*w
+   }
+  }
+ return (curscore)
+}
+end
+
+capture mata: mata drop asarray_vecprod()
+mata:
+function asarray_vecprod(myarray1, myarray2)
+{
+ curscore=0
+ for (loc=asarray_first(myarray1); loc!=NULL; loc=asarray_next(myarray1,loc))
+  {
+   mykey=asarray_key(myarray1,loc)
+   if (asarray_contains(myarray2,mykey)==1) curscore = curscore + asarray(myarray1,mykey)*asarray(myarray2,mykey)
+  }
+ return (curscore)
+}
+end
+
+
+// computing scores index
+
+capture mata: mata drop core_computing()
+mata:
+void core_computing(resultsnum, resultstxt, threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
+{
+ Qrows=rows(idvar); flag=0
+ for (i=1; i<=Qrows; i++)
+ {
+  if (args()>=12) Curgrams=(*token_func)(textvar[i,1], arg_token_func); else Curgrams=(*token_func)(textvar[i,1])
+  Curdenom=asarray_sumsq(Curgrams)
+  Numerator=asarray_index_intersect(Curgrams,indexarray)
+
+  CurResults=asarray_create("real")
+  for (loc=asarray_first(Numerator); loc!=NULL; loc=asarray_next(Numerator,loc))
+  {
+   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, asarray_key(Numerator,loc)))
+   if (Similscore>=threshold) asarray(CurResults, asarray_key(Numerator,loc),Similscore)
+  }
+  for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc))
+  {
+   resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
+   resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
+  }
+  counter=i*100/Qrows
+  if (counter>flag)
+  {
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+   flag=flag+20
   }
  }
+ stata(`"di "100%.""')
 }
 end
-/// here check
-capture mata: mata drop core_computing()
+
+capture mata: mata drop core_computing_wgt()
 mata:
-void core_computing(resultsnum,resultstxt,Threshold,idvar, textvar, usingidvar, usingtextvar, idxorder, idxarray, idxweights, weights, pointer(function) scalar wgt_func, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
+void core_computing_wgt(resultsnum, resultstxt, Threshold, idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, weightarray, pointer(function) scalar score_func, pointer(function) scalar wgt_func, pointer(function) scalar token_func, | arg_token_func)
 {
- if (idxorder==1) Qrows=rows(idvar); else Qrows=rows(usingidvar)
+ Qrows=rows(idvar); flag=0
  for (i=1; i<=Qrows; i++)
  {
-  if (idxorder==1) textstr=textvar[i,1]; else textstr=usingtextvar[i,1]
-  if (args()>=14) Curgrams=(*token_func)(textstr, arg_token_func); else Curgrams=(*token_func)(textstr)
-  Sumw=0; shortindex = asarray_create()
-  for (loc=asarray_first(Curgrams); loc!=NULL; loc=asarray_next(Curgrams,loc))
-   {
-    asarray(shortindex, asarray_key(Curgrams,loc), (i, asarray_contents(Curgrams,loc))
-	w = (*wgt_func)(asarray(weights,asarray_key(Curgrams,loc)))
-	Sumw = Sumw + (asarray_contents(Curgrams,loc) * w)^2
-   }
-   Intersectarray=asarray_index_intersect(shortindex,idxarray,weights, wgt_func)
-   NumeratorIndex=asarray_keys(Intersectarray)
-   Nrows=rows(NumeratorIndex)
-   for (j=1; j<=Nrows; i++)
-   {
-    Similscore=(*score_func)(asarray(Intersectarray, (NumeratorIndex[j,1],NumeratorIndex[j,2])),Sumw,asarray(idxweights, NumeratorIndex[j,2]))
-    if (Similscore>=Threshold)
-    {
-     resultsnum = resultsnum \ (idvar[NumeratorIndex[j,1],1], usingidvar[NumeratorIndex[j,2],1], Similscore)
-     resultstxt = resultstxt \ (textvar[NumeratorIndex[j,1],1], usingtextvar[NumeratorIndex[j,2],1])
-    }
-   }
-
+  if (args()>=14) Curgrams=(*token_func)(textvar[i,1], arg_token_func); else Curgrams=(*token_func)(textvar[i,1])
+  Curdenom=asarray_sumw(Curgrams,weightarray, wgt_func)
+  Numerator=asarray_index_intersect_wgt(Curgrams,indexarray,weightarray,wgt_func)
+  CurResults=asarray_create("real")
+  for (loc=asarray_first(Numerator); loc!=NULL; loc=asarray_next(Numerator,loc))
+  {
+   Similscore=(*score_func)(asarray_contents(Numerator,loc), Curdenom, asarray(weightusing, asarray_key(Numerator,loc)))
+   if (Similscore>=Threshold) asarray(CurResults, asarray_key(Numerator,loc),Similscore)
+  }
+  for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc))
+  {
+   resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
+   resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
+  }
+  counter=i*100/Qrows
+  if (counter>flag)
+  {
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+   flag=flag+20
+  }
+ }
+ stata(`"di "100%."')
 }
 end
-
-
 
 capture mata: mata drop index_array()
 mata:
-function index_array(colvector idvar, colvector textvar, pointer(function) scalar token_func, | arg_token_func)
- {
-  R=asarray_create()
-  Qrows=rows(idvar); flag=0;
-  for (i=1; i<=Qrows; i++)
-  {
-   counter=i*100/Qrows
-   if (counter>flag)
-   {
- stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
- flag=flag+20
-   }
-   T=asarray_create()
-   if (args()>=4) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
-   for (loc=asarray_first(T); loc!=NULL; loc=asarray_next(T,loc))
-   {
-    if (asarray_contains(R, asarray_key(T,loc))==1)
- {
-  A=asarray(R, asarray_key(T,loc))\(i, asarray_contents(T, loc))
-  asarray(R, asarray_key(T,loc), A)
- }
- else
-  asarray(R, asarray_key(T,loc), (i, asarray_contents(T, loc)))
-   }
-  }
-  stata(`"di "100%."')
-  return (R)
-  }
-  end
-
-capture mata: mata drop index_weights()
-mata:
-void index_weights(wgtarray, myindex)
- {
-  for (loc=asarray_first(myindex); loc!=NULL; loc=asarray_next(myindex,loc)){
-   if (asarray_contains(wgtarray, asarray_key(myindex,loc))==1)
-    asarray(wgtarray,asarray_key(myindex,loc), asarray(wgtarray, asarray_key(myindex,loc))+rows(asarray_contents(myindex,loc)))
-   else
-    asarray(wgtarray,asarray_key(myindex,loc),rows(asarray_contents(myindex,loc)))
-  }
- }
-end
-
-capture mata: mata drop noindex_weights()
-mata:
-void noindex_weights(wgtarray, textvar, pointer(function) scalar token_func, | arg_token_func)
+void index_array(myindex, colvector idvar, colvector textvar, wgtusing, pointer(function) scalar token_func, | arg_token_func)
 {
- Qrows=rows(textvar); flag=0;
+ Qrows=rows(idvar); flag=0;
  for (i=1; i<=Qrows; i++)
  {
   counter=i*100/Qrows
@@ -391,100 +396,125 @@ void noindex_weights(wgtarray, textvar, pointer(function) scalar token_func, | a
    flag=flag+20
   }
   T=asarray_create()
-  if (args()>=4) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
-  for (loc=asarray_first(T); loc!=NULL; loc=asarray_next(T,loc)){
-   if (asarray_contains(wgtarray, asarray_key(T,loc))==1)
-    asarray(wgtarray,asarray_key(T,loc), asarray(wgtarray, asarray_key(T,loc))+asarray_contents(T,loc))
-   else
-    asarray(wgtarray,asarray_key(T,loc),asarray_contents(T,loc))
-  }
+  if (args()>=6) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
+  array_to_index_vecadd(T, myindex, i)
+  asarray(wgtusing,i,asarray_sumsq(T))
  }
  stata(`"di "100%."')
 }
 end
 
-capture mata: mata drop long_weights()
+capture mata: mata drop array_to_index_vecadd()
 mata:
-function long_weights(colvector idvar, colvector textvar, weights, pointer(function) scalar wgt_func, pointer(function) scalar token_func, | arg_token_func)
- {
-  R=asarray_create("real")
-  for (i=1; i<=rows(idvar); i++)
-  {
-   if (args()>=5) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
-   Sumw=0
-   for (loc=asarray_first(T); loc!=NULL; loc=asarray_next(T,loc))
-   {
-    w = (*wgt_func)(asarray(weights,asarray_key(T,loc)))
-	Sumw = Sumw + (asarray_contents(T,loc) * w)^2
-   }
-   asarray(R,i,Sumw)
-  }
-  return (R)
-  }
-  end
-
-capture mata: mata drop asarray_index_intersect()
-mata:
-function asarray_index_intersect(shortindex, longindex, | weights, pointer(function) scalar wgt_func)
+void array_to_index_vecadd (myarray, myindex, mynum)
 {
- if (weights==J(0, 0, .)) weights=asarray_create("string")
- asarray_notfound(weights,1)
- Matched=asarray_create("real",2)
- Akeys=asarray_elements(shortindex); Bkeys=asarray_elements(longindex)
- if (Akeys<Bkeys)
+ for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
  {
-  for (loc=asarray_first(shortindex); loc!=NULL; loc=asarray_next(shortindex,loc))
+  if (asarray_contains(myindex, asarray_key(myarray,loc))==1)
   {
-   shortkey=asarray_key(shortindex,loc)
-   if (asarray_contains(longindex,shortkey)==1)
-   {
-    A=asarray(shortindex,shortkey)
-    B=asarray(longindex,shortkey)
-    for (i=1; i<=rows(A); i++)
-     for (j=1; j<=rows(B); j++)
-     {
-      w = (*wgt_func)(asarray(weights,shortkey))
-	  if (asarray_contains(Matched, (A[i,1],B[j,1])))
-       asarray(Matched, (A[i,1],B[j,1]), asarray(Matched,(A[i,1],B[j,1]))+(A[i,2]*B[j,2]*(w^2)))
-      else
-       asarray(Matched, (A[i,1],B[j,1]), (A[i,2]*B[j,2]*(w^2)))
-     }
-   }
+   A=asarray(myindex, asarray_key(myarray,loc))\(mynum, asarray_contents(myarray, loc))
+   asarray(myindex, asarray_key(myarray,loc), A)
   }
+  else
+   asarray(myindex, asarray_key(myarray,loc), (mynum, asarray_contents(myarray, loc)))
  }
- else
- {
-  for (loc=asarray_first(longindex); loc!=NULL; loc=asarray_next(longindex,loc))
-  {
-   longkey=asarray_key(longindex,loc)
-   if (asarray_contains(shortindex,longkey)==1)
-   {
-    A=asarray(shortindex,longkey)
-    B=asarray(longindex,longkey)
-    for (i=1; i<=rows(A); i++)
-     for (j=1; j<=rows(B); j++)
-     {
-      w = (*wgt_func)(asarray(weights,longkey))
-	  if (asarray_contains(Matched, (A[i,1],B[j,1])))
-       asarray(Matched, (A[i,1],B[j,1]), asarray(Matched,(A[i,1],B[j,1]))+(A[i,2]*B[j,2]*(w^2)))
-      else
-       asarray(Matched, (A[i,1],B[j,1]), (A[i,2]*B[j,2]*(w^2)))
-     }
-   }
-  }
- }
- return (Matched)
 }
 end
 
-/*
+capture mata: mata drop index_array_wgt()
+mata:
+void index_array_wgt(myindex, colvector idvar, colvector textvar, wgtusing, pointer(function) scalar weight_func, weights, pointer(function) scalar token_func, | arg_token_func)
+{
+ Qrows=rows(idvar); flag=0;
+ for (i=1; i<=Qrows; i++)
+ {
+  counter=i*100/Qrows
+  if (counter>flag)
+  {
+   stata(`"di ""'+strofreal(flag)+`"%..." _continue"')
+   flag=flag+20
+  }
+  T=asarray_create()
+  if (args()>=8) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
+  array_to_index_vecadd_wgt(T, myindex, i, wgtusing, weight_func, weights)
+ }
+ stata(`"di "100%."')
+}
+end
+
+capture mata: mata drop array_to_index_vecadd_wgt()
+mata:
+void array_to_index_vecadd_wgt(myarray, myindex, mynum, wgtusing, pointer(function) scalar weight_func, weights)
+{
+ W=0
+ for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
+ {
+  curkey = asarray_key(myarray,loc)
+  curvalue = asarray_contents(myarray, loc)
+  if (asarray_contains(myindex, curkey)==1)
+  {
+   A=asarray(myindex, curkey)\(mynum, curvalue)
+   asarray(myindex, curkey, A)
+  }
+  else
+   asarray(myindex, curkey, (mynum, curvalue))
+
+  W=W+(curvalue * ((*weight_func)(asarray(weights, curkey))))^2
+ }
+ asarray(wgtusing,mynum,W)
+}
+end
+
+capture mata: mata drop asarray_index_intersect()
+mata:
+  function asarray_index_intersect(shortarray, longindex)
+  {
+   Matched=asarray_create("real")
+   shortkeys=asarray_keys(shortarray)
+   for (i=1; i<=rows(shortkeys); i++)
+    curkey=shortkeys[i,1]
+	if (asarray_contains(longindex, curkey))
+	{
+	 A=asarray(longindex, curkey)
+	 for (j=1; j<=rows(A); j++)
+	  if (asarray_contains(Matched, A[j,1]))
+	   asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + asarray(shortarray, curkey)*A[j,2]))
+	  else
+	   asarray(Matched, A[j,1],asarray(shortarray, curkey)*A[j,2])
+	}
+   return (Matched)
+  }
+end
+
+capture mata: mata drop asarray_index_intersect_wgt()
+mata:
+function asarray_index_intersect_wgt(shortarray, longindex, weights, pointer(function) scalar weight_func)
+  {
+   asarray_notfound(weights,1)
+   Matched=asarray_create("real")
+   shortkeys=asarray_keys(shortarray)
+   for (i=1; i<=rows(shortkeys); i++)
+   {
+    curkey=shortkeys[i,1]
+	if (asarray_contains(longindex, curkey))
+	{
+	 A=asarray(longindex, curkey)
+	 for (j=1; j<=rows(A); j++)
+	 {
+	  curwgt=(*weight_func)(asarray(weights,curkey))
+	  curnum = asarray(shortarray, curkey) * A[j,2] * (curwgt^2)
+	  if (asarray_contains(Matched, A[j,1]))
+	   asarray(Matched, A[j,1], (asarray(Matched, A[j,1]) + curnum))
+	  else
+	   asarray(Matched, A[j,1],curnum)
+	 }
+	}
+   }
+   return (Matched)
+  }
+end
+
 // GRAM weighting functions
-
-weight_* = weighting function (e.g. simf_bigram, simf_token)
-           takes a frequency (real) returns the desired weight (real)
-*/
-
-
 capture mata: mata drop weight_simple()
 mata:
 function weight_simple(real scalar gramfreq)
@@ -662,4 +692,127 @@ function score_minsimple(real scalar numerator, real scalar denom1, real scalar 
   else if (numerator>min(vecdenom)) return (1)
   else return (numerator/min(vecdenom))
  }
+end
+
+
+capture program drop freqindex
+program freqindex
+ version 12
+ syntax varlist(min=2 max=2) ///
+   [, SIMilmethod(string)] ///
+   [INCMata(string)] ///
+   [KEEPMata] [NOSTata]
+
+// setup //////////////////////////////////////
+ tokenize `varlist'
+ local idvar `1'
+ local txtvar `2'
+ confirm numeric variable `idvar'
+ confirm string variable `txtvar'
+ if ("`incmata'"=="") {
+  local incmata WGTARRAY
+  mata: WGTARRAY=asarray_create(); P_WGTARRAY=&`incmata'
+ }
+ else {
+  capture mata: P_WGTARRAY=&`incmata'
+  if (_rc!=0) {
+   di "`incmata' not found in MATA. Check spelling."
+   error _rc
+  }
+ }
+ if ("`keepmata'"=="") local clearmata=1
+ else local clearmata=0
+
+ tokenize "`similmethod'" , parse(",")
+ if ("`1'"!="") {
+  local similfunc `1'
+  macro shift
+  local similargs `*'
+ }
+ else local similfunc "bigram"
+ capture mata: similfunc_p=&simf_`similfunc'()
+ if (_rc!=0) {
+  di "`similfunc' not found as a similarity function. Check spelling."
+  error _rc
+ }
+ if ("`similargs'"!="") {
+  local args_plugin "`similargs'"
+  local testtxt "This is just a test"
+  capture mata: TEST=(*similfunc_p)("`testtxt'"`args_plugin')
+  if (_rc!=0) {
+   di "There seems to be an error with the chosen optional argument(s): `similargs'"
+   di "(note: break is recommended. Press any key to ignore this and continue ."
+   set more on
+   more
+   set more off
+  }
+ }
+ // programs starts
+ preserve
+ mata: IDW=st_data(.,"`idvar'"); TXTW=st_sdata(.,"`txtvar'")
+ mata: *P_WGTARRAY = compute_freq(TXTW, *P_WGTARRAY, similfunc_p`args_plugin')
+ if ("`nostata'"==""){
+  clear
+  mata: dump_wgtarray(*P_WGTARRAY)
+ }
+ if ("`keepmata'"=="") mata: mata drop `incmata' IDW TXTW P_WGTARRAY
+ restore, not
+end
+
+capture mata: mata drop dump_wgtarray()
+mata:
+void dump_wgtarray(myarray)
+{
+ RESNUM=J(0,1,.)
+ RESTXT=J(0,1,"")
+ for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
+ {
+  RESNUM = RESNUM \ asarray_contents(myarray, loc)
+  RESTXT = RESTXT \ asarray_key(myarray, loc)
+ }
+ (void) st_addvar(("str244","int"),("grams", "freq"))
+ st_addobs(rows(RESNUM))
+ st_store(.,("freq"), RESNUM)
+ st_sstore(.,("grams"), RESTXT)
+}
+end
+
+capture mata: mata drop compute_freq()
+mata:
+function compute_freq(colvector textvar, freqindex, pointer(function) scalar token_func, | arg_token_func)
+ {
+  for (i=1; i<=rows(textvar); i++)
+  {
+   if (args()>=5) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
+   array_to_index_sum(T, freqindex)
+  }
+ return (freqindex)
+ }
+end
+
+capture mata: mata drop array_to_index_sum()
+mata:
+void array_to_index_sum (myarray, myindex)
+{
+ for (loc=asarray_first(myarray); loc!=NULL; loc=asarray_next(myarray,loc))
+ {
+  if (asarray_contains(myindex, asarray_key(myarray,loc))==1)
+  {
+   A=asarray(myindex, asarray_key(myarray,loc))+asarray_contents(myarray, loc)
+   asarray(myindex, asarray_key(myarray,loc), A)
+  }
+  else
+   asarray(myindex, asarray_key(myarray,loc), asarray_contents(myarray, loc))
+ }
+}
+end
+
+
+capture mata: mata drop load_weights_to_array()
+mata:
+void load_weights_to_array(myarray,mygram, myfreq )
+{
+ for (i=1; i<=rows(mygram); i++)
+  asarray(myarray,mygram[i,1], myfreq[i,1])
+}
 end
