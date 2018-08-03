@@ -1,5 +1,4 @@
 {smcl}
-{smcl}
 {* *! version 1.0  march2015}{...}
 {vieweralsosee "[D] merge" "mansection D merge"}{...}
 {vieweralsosee "[D] append" "help append"}{...}
@@ -166,6 +165,10 @@ it often implies an improvement of the similarity scores and,
 in consequence, the overall quality of the matching exercise.
 However, too much data cleaning might remove relevant information,
 inducing a negative effect on quality due to false positives.
+{p_end}
+
+{pstd}
+{cmd:matchit} requires {help freqindex} to be installed when computing weights.
 {p_end}
 
 
@@ -460,6 +463,10 @@ second, the amount of {it:grams} from the string in the master file;
 and, third, the amount of {it:grams} from the string in the using file.
 The naming convention is to have {it:score_} before the name of your function.{p_end}
 
+{marker author}{...}
+{title:Author}
+
+{pstd}Julio D. Raffo{p_end}
 
 {marker references}{...}
 {title:References}
