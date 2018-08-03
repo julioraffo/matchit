@@ -1,7 +1,6 @@
-/*
-ver 0.4
+*! 0.5 J.D. Raffo September 2014
 
-2DO
+/* 2DO
 -----------
 - saving partial results to disk? (check after testing against large datasets)
 - saving weights & index to disk
@@ -48,17 +47,9 @@ program matchit
 			[OVERride]
 
 	// setup //////////////////////////////////////
-	// checks master vars
 	tokenize `varlist'
 	local idmaster `1'
 	local txtmaster `2'
-	confirm numeric variable `idmaster'
-	confirm string variable `txtmaster'
-
-	// checks using file (variables checked when using it)
-	confirm file "`using'"
-
-	// checks similarity function
 	tokenize `similmethod'
 	if ("`1'"!="") {
 		local similfunc `1'
@@ -66,6 +57,12 @@ program matchit
 		local similargs `*'
 	}
 	else local similfunc "bigram"
+	if ("`score'"=="") local score "jaccard"
+
+	// checks master vars
+	confirm numeric variable `idmaster'
+	confirm string variable `txtmaster'
+	confirm file "`using'"
 	capture mata: similfunc_p=&simf_`similfunc'()
 	if (_rc!=0) {
 		di "`similfunc' not found as a similarity function. Check spelling."
@@ -83,31 +80,24 @@ program matchit
 			set more off
 		}
 	}
-	// checks weigths function
-	if ("`weights'"!="") {
+	if ("`weights'"=="") local weights "noweights"
+	if ("`weights'"!="noweights") {
 		capture mata: weightfunc_p=&weight_`weights'()
 		if (_rc!=0) {
 			di "`weights' not found as a weights function. Check spelling."
 			error _rc
 		}
 	}
-	// checks score function
-	if ("`score'"=="") {
-		local score "jaccard"
-	}
 	capture mata: scorefunc_p=&score_`score'()
 	if (_rc!=0) {
 		di "`score' not found as a score computing function. Check spelling."
 		error _rc
 	}
-	// threshold
 	capture mata: THRESHOLD=`threshold'
 	if (_rc!=0) {
 		di "`threshold' does not seem a valid threshold."
 		error _rc
 	}
-
-
 	// checks if ok to wipe master dataset
 	qui describe
 	if (r(changed)>0 & "`override'"=="") {
@@ -133,10 +123,10 @@ program matchit
 	mata: INDEXU=index_array(IDU, TXTU,similfunc_p`args_plugin')
 
 	// Defining Computing weights from USING index
-	if ("`weights'"!="") {
+	if ("`weights'"!="noweights") {
 	 di "Computing weights using: `weights'"
 	 mata: WGTINDEX=index_weights(INDEXU, weightfunc_p)
-	 }
+	}
 	else {
 	 di "No weights computed"
 	 mata: WGTINDEX=asarray_create()
@@ -147,7 +137,6 @@ program matchit
 
 	di "Computing results"
 	mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
-
 	mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTINDEX,scorefunc_p, similfunc_p`args_plugin')
 
 	di "Saving results"
@@ -216,16 +205,7 @@ function index_array(colvector idvar, colvector textvar, pointer(function) scala
    if (args()>=4) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
    for (loc=asarray_first(T); loc!=NULL; loc=asarray_next(T,loc))
    {
-    /* Wrong??
-	if (asarray_contains(R, asarray_key(T,loc))==1)
-	{
-	 A=asarray(R, asarray_key(T,loc))\(idvar[i,1], asarray_contents(T, loc))
-	 asarray(R, asarray_key(T,loc), A)
-	}
-	else
-	 asarray(R, asarray_key(T,loc), (idvar[i,1], asarray_contents(T, loc)))
-	 */
-	if (asarray_contains(R, asarray_key(T,loc))==1)
+    if (asarray_contains(R, asarray_key(T,loc))==1)
 	{
 	 A=asarray(R, asarray_key(T,loc))\(i, asarray_contents(T, loc))
 	 asarray(R, asarray_key(T,loc), A)
@@ -342,7 +322,6 @@ function weight_log(real scalar gramfreq)
 
 // Similarity functions
 // simf_* = similarity function (e.g. simf_bigram, simf_token)
-
 capture mata: mata drop simf_token()
 mata:
 function simf_token(string scalar parse_string)
@@ -351,10 +330,8 @@ function simf_token(string scalar parse_string)
    T=tokens(parse_string)
    for (i=1; i<=cols(T); i++)
    {
-    if (asarray_contains(A, T[1,i])!=1)
-		asarray(A, T[1,i], 1)
-	else
-		asarray(A, T[1,i], asarray(A, T[1,i])+1)
+    if (asarray_contains(A, T[1,i])!=1) asarray(A, T[1,i], 1)
+	else asarray(A, T[1,i], asarray(A, T[1,i])+1)
    }
    return (A)
  }
@@ -371,10 +348,8 @@ function simf_bigram(string scalar parse_string)
 	 for (j=1; j<=Tlen; j++)
 	 {
 	  gram=substr(parse_string,j,2)
-	  if (asarray_contains(T, gram)!=1)
-		asarray(T, gram, 1)
-	  else
-		asarray(T, gram, asarray(T, gram)+1)
+	  if (asarray_contains(T, gram)!=1) asarray(T, gram, 1)
+	  else asarray(T, gram, asarray(T, gram)+1)
 	 }
 	 return(T)
 	}
@@ -397,10 +372,8 @@ function simf_ngram(string scalar parse_string, real scalar nsize)
 	 for (j=1; j<=Tlen; j++)
 	 {
 	  gram=substr(parse_string,j,nsize)
-	  if (asarray_contains(T, gram)!=1)
-		asarray(T, gram, 1)
-	  else
-		asarray(T, gram, asarray(T, gram)+1)
+	  if (asarray_contains(T, gram)!=1) asarray(T, gram, 1)
+	  else asarray(T, gram, asarray(T, gram)+1)
 	 }
 	 return(T)
 	}
@@ -412,6 +385,61 @@ function simf_ngram(string scalar parse_string, real scalar nsize)
  }
 end
 
+capture mata: mata drop simf_ngram_circ()
+mata:
+function simf_ngram_circ(string scalar parse_string, real scalar nsize)
+ {
+	T=asarray_create()
+	Tlen=strlen(parse_string)-(nsize-1)
+	if (Tlen>1)
+	{
+	 firstgram=substr(parse_string,1,nsize)
+	 new_parse_string = parse_string+" "+firstgram
+	 Tlen=Tlen+nsize+1
+
+	 for (j=1; j<=Tlen; j++)
+	 {
+	  gram=substr(new_parse_string,j,nsize)
+	  if (asarray_contains(T, gram)!=1) asarray(T, gram, 1)
+	  else asarray(T, gram, asarray(T, gram)+1)
+	 }
+	 return(T)
+	}
+	else
+	{
+	 asarray(T, parse_string, 1)
+	 return (T)
+	}
+ }
+end
+
+capture mata: mata drop simf_token_soundex()
+mata:
+function simf_token_soundex(string scalar parse_string)
+ {
+   A=asarray_create()
+   T=soundex(tokens(parse_string))
+   for (i=1; i<=cols(T); i++)
+   {
+	if (asarray_contains(A, T[1,i])!=1) asarray(A, T[1,i], 1)
+	else asarray(A, T[1,i], asarray(A, T[1,i])+1)
+   }
+   return (A)
+ }
+end
+
+capture mata: mata drop simf_soundex()
+mata:
+function simf_soundex(string scalar parse_string)
+ {
+   A=asarray_create()
+   T=soundex(parse_string)
+   asarray(A, T[1,1], 1)
+   return (A)
+ }
+end
+
+
 // Score functions
 // score_* = functions to compute similarity score
 
@@ -420,10 +448,8 @@ mata:
 function score_jaccard(real scalar numerator, real scalar denom1, real scalar denom2)
  {
   denom=denom1*denom2
-  if (denom<=0)
-    return (0)
-  else
-    return (numerator/sqrt(denom))
+  if (denom<=0) return (0)
+  else return (numerator/sqrt(denom))
  }
 end
 
@@ -432,10 +458,8 @@ mata:
 function score_simple(real scalar numerator, real scalar denom1, real scalar denom2)
  {
   denom=denom1+denom2
-  if (denom<=0)
-    return (0)
-  else
-    return (2*numerator/denom)
+  if (denom<=0) return (0)
+  else return (2*numerator/denom)
  }
 end
 
@@ -445,9 +469,8 @@ function score_minsimple(real scalar numerator, real scalar denom1, real scalar 
  {
   denom=denom1*denom2
   vecdenom = denom1, denom2
-  if (denom<=0)
-    return (0)
-  else
-    return (numerator/min(vecdenom))
+  if (denom<=0) return (0)
+  else if (numerator>min(vecdenom)) return (1)
+  else return (numerator/min(vecdenom))
  }
 end
