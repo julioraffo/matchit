@@ -1,11 +1,10 @@
-clear mata
 /*
-ver 0.1
+ver 0.2
 
 2DO
 -----------
-- initial_values array to improve functionality  & code quality? (not sure)
-- saving partial results/index to disk? (check after testing against large datasets)
+- saving partial results to disk? (check after testing against large datasets)
+- saving weights & index to disk
 
 Coding style
 -------------
@@ -33,17 +32,7 @@ weight_* = weighting function (e.g. simf_bigram, simf_token)
 	weightfunc_p = pointer to weighting mata function
 	scorefunc_p = pointer to score computing function
 
-Sample
-----------
-cd D:\Port\DropboxPortableAHK\Dropbox\MyApp\Stata12\ado\personal
-use short.dta
-
 */
-
-cd D:\Port\DropboxPortableAHK\Dropbox\MyApp\Stata12\ado\personal
-do matchit_simf.mata
-do matchit_weights.mata
-do matchit_scoref.mata
 
 capture program drop matchit
 program matchit
@@ -62,7 +51,6 @@ program matchit
 	local idmaster `1'
 	local txtmaster `2'
 	confirm numeric variable `idmaster'
-	isid(`idmaster')
 	confirm string variable `txtmaster'
 
 	// checks using file (variables checked when using it)
@@ -134,8 +122,7 @@ program matchit
 	di "Loading USING file: `using'"
 	use `using', clear
 	confirm numeric variable `idusing'
-    isid(`idusing')
-	confirm string variable `txtusing'
+    confirm string variable `txtusing'
 	mata: IDU=st_data(.,"`idusing'"); TXTU=st_sdata(.,"`txtusing'")
 	clear
 
@@ -159,8 +146,7 @@ program matchit
 	di "Computing results"
 	mata: RESNUM=J(0,3,.); RESTXT=J(0,2,"")
 
-	mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,TXTU,INDEXU,WGTU,WGTINDEX,scorefunc_p, similfunc_p`args_plugin')
-	*mata: core_computing()
+	mata: core_computing(RESNUM,RESTXT,THRESHOLD,IDM,TXTM,IDU,TXTU,INDEXU,WGTU,WGTINDEX,scorefunc_p, similfunc_p`args_plugin')
 
 	di "Saving results"
 	// checks vars naming
@@ -182,11 +168,11 @@ end
 // computing scores
 capture mata: mata drop core_computing()
 mata:
-void core_computing(resultsnum, resultstxt, Threshold,idvar, textvar, usingtextvar, indexarray, weightusing, weightarray, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
+void core_computing(resultsnum, resultstxt, Threshold,idvar, textvar, usingidvar, usingtextvar, indexarray, weightusing, weightarray, pointer(function) scalar score_func, pointer(function) scalar token_func, | arg_token_func)
 {
 		Qrows=rows(idvar); flag=0
 		for (i=1; i<=Qrows; i++) {
-		 if (args()>=12) Curgrams=(*token_func)(textvar[i,1], arg_token_func); else Curgrams=(*token_func)(textvar[i,1])
+		 if (args()>=13) Curgrams=(*token_func)(textvar[i,1], arg_token_func); else Curgrams=(*token_func)(textvar[i,1])
 		 Sumw=asarray_sumw(Curgrams,weightarray)
 		 Numerator=asarray_index_intersect(Curgrams,indexarray,weightarray)
 
@@ -197,7 +183,7 @@ void core_computing(resultsnum, resultstxt, Threshold,idvar, textvar, usingtextv
 		 }
 
 		 for (loc=asarray_first(CurResults); loc!=NULL; loc=asarray_next(CurResults, loc)) {
-		  resultsnum = resultsnum \ (idvar[i,1], asarray_key(CurResults, loc), asarray_contents(CurResults, loc))
+		  resultsnum = resultsnum \ (idvar[i,1], usingidvar[asarray_key(CurResults, loc),1], asarray_contents(CurResults, loc))
 		  resultstxt = resultstxt \ (textvar[i,1], usingtextvar[asarray_key(CurResults, loc),1])
 		 }
 		counter=i*100/Qrows
@@ -228,13 +214,23 @@ function index_array(colvector idvar, colvector textvar, pointer(function) scala
    if (args()>=4) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
    for (loc=asarray_first(T); loc!=NULL; loc=asarray_next(T,loc))
    {
-    if (asarray_contains(R, asarray_key(T,loc))==1)
+    /* Wrong??
+	if (asarray_contains(R, asarray_key(T,loc))==1)
 	{
 	 A=asarray(R, asarray_key(T,loc))\(idvar[i,1], asarray_contents(T, loc))
 	 asarray(R, asarray_key(T,loc), A)
 	}
 	else
 	 asarray(R, asarray_key(T,loc), (idvar[i,1], asarray_contents(T, loc)))
+	 */
+	if (asarray_contains(R, asarray_key(T,loc))==1)
+	{
+	 A=asarray(R, asarray_key(T,loc))\(i, asarray_contents(T, loc))
+	 asarray(R, asarray_key(T,loc), A)
+	}
+	else
+	 asarray(R, asarray_key(T,loc), (i, asarray_contents(T, loc)))
+
    }
   }
   stata(`"di "100%."')
@@ -266,7 +262,7 @@ function long_weights(colvector idvar, colvector textvar, weights, pointer(funct
   {
    if (args()>=5) T=(*token_func)(textvar[i,1], arg_token_func); else T=(*token_func)(textvar[i,1])
    Sumw=asarray_sumw(T,weights)
-   asarray(R,idvar[i,1],Sumw)
+   asarray(R,i,Sumw)
   }
   return (R)
   }
@@ -306,4 +302,137 @@ mata:
     Sumw = Sumw + (asarray_contents(shortarray,loc) * asarray(weights,asarray_key(shortarray,loc))^2)
    return (Sumw)
   }
+end
+
+
+
+/*
+// GRAM weighting functions
+
+weight_* = weighting function (e.g. simf_bigram, simf_token)
+           takes a frequency (real) returns the desired weight (real)
+*/
+
+
+capture mata: mata drop weight_simple()
+mata:
+function weight_simple(real scalar gramfreq)
+ {
+  return (1/gramfreq)
+ }
+  end
+
+capture mata: mata drop weight_root()
+mata:
+function weight_root(real scalar gramfreq)
+ {
+  return (1/sqrt(gramfreq))
+ }
+  end
+
+capture mata: mata drop weight_log()
+mata:
+function weight_log(real scalar gramfreq)
+ {
+  return (1/(log(gramfreq)+1))
+ }
+  end
+
+// Similarity functions
+// simf_* = similarity function (e.g. simf_bigram, simf_token)
+
+capture mata: mata drop simf_token()
+mata:
+function simf_token(string scalar parse_string)
+ {
+   A=asarray_create()
+   T=tokens(parse_string)
+   for (i=1; i<=cols(T); i++)
+   {
+    if (asarray_contains(A, T[1,i])!=1)
+		asarray(A, T[1,i], 1)
+	else
+		asarray(A, T[1,i], asarray(A, T[1,i])+1)
+   }
+   return (A)
+ }
+end
+
+capture mata: mata drop simf_bigram()
+mata:
+function simf_bigram(string scalar parse_string)
+ {
+   T=asarray_create()
+   Tlen=strlen(parse_string)-1
+    if (Tlen>1)
+	{
+	 for (j=1; j<=Tlen; j++)
+	 {
+	  gram=substr(parse_string,j,2)
+	  if (asarray_contains(T, gram)!=1)
+		asarray(T, gram, 1)
+	  else
+		asarray(T, gram, asarray(T, gram)+1)
+	 }
+	 return(T)
+	}
+	else
+	{
+	 asarray(T, parse_string, 1)
+	 return (T)
+	}
+ }
+end
+
+capture mata: mata drop simf_ngram()
+mata:
+function simf_ngram(string scalar parse_string, real scalar nsize)
+ {
+	T=asarray_create()
+	Tlen=strlen(parse_string)-(nsize-1)
+    if (Tlen>1)
+	{
+	 for (j=1; j<=Tlen; j++)
+	 {
+	  gram=substr(parse_string,j,nsize)
+	  if (asarray_contains(T, gram)!=1)
+		asarray(T, gram, 1)
+	  else
+		asarray(T, gram, asarray(T, gram)+1)
+	 }
+	 return(T)
+	}
+	else
+	{
+	 asarray(T, parse_string, 1)
+	 return (T)
+	}
+ }
+end
+
+// Score functions
+// score_* = functions to compute similarity score
+
+capture mata: mata drop score_jaccard()
+mata:
+function score_jaccard(real scalar numerator, real scalar denom1, real scalar denom2)
+ {
+  denom=denom1*denom2
+  if (denom<=0)
+    return (0)
+  else
+    return (numerator/sqrt(denom))
+ }
+end
+
+capture mata: mata drop score_simple()
+mata:
+function score_simple(real scalar numerator, real scalar denom1, real scalar denom2)
+ {
+  denom=denom1+denom2
+  if (denom<=0)
+    return (0)
+  else
+    return (2*numerator/denom)
+ }
 end
