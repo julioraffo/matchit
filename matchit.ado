@@ -1,4 +1,4 @@
-*! 1.5 J.D. Raffo July 2017
+*! 1.5.1 J.D. Raffo April 2019
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
@@ -198,7 +198,10 @@ program matchit
    format %9.4f grams_per_obs
    format %9.0f freq
    di "List of most frequent grams in Master file:"
-   list grams freq grams_per_obs, t clean compress ab(50) str(50)
+   cap list grams freq grams_per_obs, t clean compress ab(50) str(50)
+   if _rc!=0 {
+     list grams freq grams_per_obs, t clean compress ab(33) str(33)
+   }
    di " "
    di "Analyzing Using file"
    use "`using'", clear
@@ -212,7 +215,10 @@ program matchit
    format %9.0f freq
    local upb=cond(_N>20, 20, _N)
    di "List of most frequent grams in Using file:"
-   list grams freq grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
+   cap list grams freq grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
+   if _rc!=0 {
+     list grams freq grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
+   }
    drop grams_per_obs
    local curtype:type grams
    if ("`curtype'"=="strL") qui recast `mystr' grams, force
@@ -238,7 +244,10 @@ program matchit
    di "(note: values are estimated, final results may differ)"
    gsort -crosspairs
    local upb=cond(_N>20, 20, _N)
-   list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
+   cap list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
+   if _rc!=0 {
+     list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
+   }
    di " "
    restore
  }
@@ -855,9 +864,9 @@ function simf_ngram_circ(string scalar parse_string, real scalar nsize, | real s
  Tlen=strlen(parse_string)-(nsize-1)
  if (Tlen>1)
  {
-  firstgram=substr(parse_string,1,nsize)
+  firstgram=substr(parse_string,1,nsize-1)
   new_parse_string = parse_string+" "+firstgram
-  Tlen=Tlen+nsize+1
+  Tlen=Tlen+nsize
   for (j=1; j<=Tlen; j++)
   {
    gram=substr(new_parse_string,j,nsize)

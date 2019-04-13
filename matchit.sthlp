@@ -115,7 +115,7 @@ Default is {it:step} = 20 (percent).
 {syntab :{it:Only for two datasets syntax:}}
 
 {synopt :{opt t:hreshold(num)}}
-Similarity scores to be kept in final results. 
+Lowest similarity scores to be kept in final results. 
 Default is {it:num} = .5.
 {p_end}
 
@@ -126,6 +126,17 @@ Ignores unsaved data warning.
 {synopt :{opt di:agnose}}
 Reports a preliminary analysis about indexation. 
 To be used for optimizing indexation by cleaning original data and trying different {it:simfcn}.
+{p_end}
+
+{synopt :{opt stopw:ordsauto}}
+Generates list of stopwords automatically.
+It improves indexation speed but ignores potential matches.
+{p_end}
+
+{synopt :{opt swt:hreshold(grams-per-observation)}}
+Only valid with {it:stopwordsauto}. 
+It sets the threshold of {it:grams} per observation to be included in the stopwords list.
+Default is {it:grams-per-observation} = .2.
 {p_end}
 
 
@@ -311,7 +322,7 @@ makes {cmd: matchit} ignore unsaved data warning. This is to be used with cautio
 reports a preliminary analysis about indexation. 
 To be used for optimizing indexation by cleaning original data and trying different {it:simfcn}.
 First, it reports a list of the top 20 most frequent {it:grams} (which depend on the chosen {it:simfcn}) from both the Master and Using files.
-{it:Grams} scoring a higher percent will increase the likelihood of more strings being compared,
+{it:Grams} scoring a higher {it:grams-per-observation} ratio will increase the likelihood of more strings being compared,
 especially if they score high in both lists. 
 This list provides a good starting point for identifying {it:grams} that are less informative, making them good candidates for removal.
 For instance, {it:Inc.}, {it:Corporation}, {it:University}, {it:Mr.}, {it:Ms.}, {it:Jr.}, {it:Street}, or {it:Avenue} 
@@ -320,14 +331,34 @@ Second, it performs an overall assessment of the matching procedure about to be 
 (a) total pairs being compared (observations in master file x those in the using file);
 (b) a rough estimation of the maximum reduction (in percent) which could be obtained 
 by the {cmd:matchit} indexation (based on the underlying data and the chosen {it:simfcn}); and, 
-(c) a list of the top 20 {it:grams} which have the greatest negative impact to the indexation performance.
+(c) a list of the top 20 {it:grams} which have the greatest negative impact to the indexation performance
+({it:max_common_space}). 
 In order to increase the speed of {cmd:matchit} user should reduce the size of (a) or reduce the percent reported in (b). 
-The latter can be achieved by analyzing the results in (c) and removing those grams with higher scores.
+The latter can be achieved by analyzing the results in (c) and removing those grams with higher scores manually or 
+by applying the option {it: stopwordsauto}.
 It is worth noting that values from (b) are estimated and final results may differ. 
 Typically, they provide an upper bound, implying that final results should be lower 
 (although in some very particular cases it may actually get better).
 {p_end}
+  
+{phang}
+{opt stopw:ordsauto}
+generates automatically a list of stopwords based on {it:grams} from both master and using files.
+The selected stopwords are ignored in the indexation procedure and similarity score calculations.
+For instance, a string composed only by {it:grams} in the stopwords list will always score zero
+regardless to what is compared with.
+Similarly, two strings differing only in {it:grams} from the stopwords list will score one,
+regardless of how many these different {it:grams} are.
+As such, it could improve indexation speed at the expense of ignoring potential matches and exarcebating similarity scores.
+{p_end}
 
+{phang}
+{opt swt:hreshold(grams-per-observation)}
+sets the threshold of {it:grams} per observation to be included in the stopwords list.
+The values are the same than those reported in the {it:grams_per_obs} columns from the {it:diagnose} option.
+Default is {it:grams-per-observation} = .2.
+Only valid with {it:stopwordsauto}. 
+{p_end}
 
 {synoptline}
 
@@ -343,15 +374,23 @@ Typically, they provide an upper bound, implying that final results should be lo
 
 {pstd}Setting score function{p_end}
 {phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:s(simple)} {p_end}
-{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:s(minsimple)} {p_end} 
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:s(minsimple)} {p_end}
+ 
+{pstd}Setting weight function{p_end}
+{phang2}{cmd:. matchit} {it:mystring1 mystring2}, {bf:w(log)} {p_end}
+
 
 {pstd}Simple two-datasets syntax{p_end}
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:)}
 
-{pstd}Setting weighting method{p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(simple)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(log)} {p_end}
-{phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:) w(root)} {p_end}
+{pstd}Diagnosing problems{p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} using {it:myusingfile.dta}, idu({it:usingidvar}) txtu({it:usingtextvar}) {bf:di} {p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} using {it:myusingfile.dta}, idu({it:usingidvar}) txtu({it:usingtextvar}) {bf:di} {bf: sim(token)}{p_end}
+
+{pstd}Applying automated stopwords list{p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} using {it:myusingfile.dta}, idu({it:usingidvar}) txtu({it:usingtextvar}) {bf:stopw} {p_end}
+{phang2}{cmd:. matchit} {it:myidvar mytextvar} using {it:myusingfile.dta}, idu({it:usingidvar}) txtu({it:usingtextvar}) {bf:stopw} {bf: swt(.05)}{p_end}
+
 
 {synoptline}
 
@@ -460,14 +499,15 @@ As apparent from the formulas, all these are exactly the same if {it:s1} and {it
 In simple terms, the major difference among these is how they treat the dissimilar part of the longer string.
 {it:Jaccard} and {it:simple} basically take a geometric and arimethic mean, respectively;  
 while {it:minsimple} considers only the shorter string.
-If one of the two sources has unuseful information in the string, 
+If one of the two sources has unuseful information in the string
+- e.g. address information embedded in the company name field -
 {it:minsimple} might be preferred at the expense of increasing the false positive results. 
 {p_end}
 
 {pstd} 
-In the case of using any weighting option,
+In the case of using any weighting (or stopwords) option ,
 the previous formulas still hold but {it:m}, {it:s1} and {it:s2} are weighted
-instead of just counts of {it:grams}.
+(or ignored) instead of just counts of {it:grams}.
 {p_end}
 
 {marker tips}{...}
@@ -478,23 +518,23 @@ instead of just counts of {it:grams}.
 it does it less efficiently when there is no risk of false negatives. {p_end}
 
 {phang}2) After using {cmd:matchit}, the resulting dataset can be easily merged with 
-either the {it:master} or {it:using} datasets using the {help merge} command.{p_end}
+either the {it:master} or {it:using} datasets using the {help merge} or {help joinby} commands.{p_end}
 
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} 
 {bf:, idu(}{it:usingidvar}{bf:) txtu(}{it:usingtextvar}{bf:)} {p_end}
-{phang2}{cmd:. merge} {it:myidvar} {bf: using} {it:mymasterfile.dta} {p_end}
-{phang2}{cmd:. merge} {it:usingidvar} {bf: using} {it:myusingfile.dta} {p_end}
+{phang2}{cmd:. merge} m:1 {it:myidvar} {bf: using} {it:mymasterfile.dta} {p_end}
+{phang2}{cmd:. merge} m:1 {it:usingidvar} {bf: using} {it:myusingfile.dta} {p_end}
 
 {phang}3)It does not matter in substance which file is used as {it:master} or {it:using} file.
 It just matters in the order of the columns in the resulting dataset.
-The computational time is likely to differ, but these differences are not found substantive (around 5% or less).  
+The computational time is likely to differ, but these differences are not found substantive (within 5%).  
 {p_end}
 
 {phang}4)Observations in the resulting dataset are not sorted.
 This can be easily done by making use of sorting commands such as
 {help sort} or {help gsort} after running {cmd:matchit}.
 Often, it is useful to sort the resulting dataset from the higher similarity score 
-to the lower one in order to establish the best threshold.  
+to the lower one in order to manually establish the best threshold to keep.  
 {p_end}
 
 {phang2}{cmd:. matchit} {it:myidvar mytextvar} {bf: using} {it:myusingfile.dta} 
@@ -518,8 +558,8 @@ The naming convention is to have {it:weight_} before the name of your function.{
 {phang2} {it:Scoring functions} receive three numeric scalars and return a single numeric scalar transformation of them. 
 The three numeric scalars are passed in the following order:
 First, the amount of {it:grams} matched; 
-second, the amount of {it:grams} from the string in the master file; 
-and, third, the amount of {it:grams} from the string in the using file.
+second, the amount of {it:grams} from the string in the master file (or first column); 
+and, third, the amount of {it:grams} from the string in the using file (or second column).
 The naming convention is to have {it:score_} before the name of your function.{p_end}
 
 {marker author}{...}

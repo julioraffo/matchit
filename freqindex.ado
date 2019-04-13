@@ -1,4 +1,4 @@
-*! 1.3 J.D. Raffo July 2017
+*! 1.3.1 J.D. Raffo April 2019
 program freqindex
  version 12
  syntax varlist(min=1 max=2) ///
@@ -220,9 +220,9 @@ function simf_ngram_circ(string scalar parse_string, real scalar nsize, | real s
  Tlen=strlen(parse_string)-(nsize-1)
  if (Tlen>1)
  {
-  firstgram=substr(parse_string,1,nsize)
+  firstgram=substr(parse_string,1,nsize-1)
   new_parse_string = parse_string+" "+firstgram
-  Tlen=Tlen+nsize+1
+  Tlen=Tlen+nsize
   for (j=1; j<=Tlen; j++)
   {
    gram=substr(new_parse_string,j,nsize)
