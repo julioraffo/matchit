@@ -1,4 +1,4 @@
-*! 1.5.1 J.D. Raffo April 2019
+*! 1.5.2 J.D. Raffo May 2020
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
@@ -129,12 +129,6 @@ program matchit
  // matching columns
  if ("`match'"=="columns") {
   preserve
-  /*
-  if ("`curtype1'"=="strL" | "`curtype1'"=="strL") {
-   di "Columns syntax does not allow strL types. Use -recast- to generate str# variables"
-   exit
-  }
-  */
   if ("`generate'"=="") local similscore "similscore"
  else local similscore "`generate'"
  cap gen double `similscore'=.
@@ -199,9 +193,8 @@ program matchit
    format %9.0f freq
    di "List of most frequent grams in Master file:"
    cap list grams freq grams_per_obs, t clean compress ab(50) str(50)
-   if _rc!=0 {
-     list grams freq grams_per_obs, t clean compress ab(33) str(33)
-   }
+   if _rc!=0 list grams freq grams_per_obs, t clean compress ab(33) str(33)
+   else list grams freq grams_per_obs, t clean compress ab(50) str(50)
    di " "
    di "Analyzing Using file"
    use "`using'", clear
@@ -216,16 +209,15 @@ program matchit
    local upb=cond(_N>20, 20, _N)
    di "List of most frequent grams in Using file:"
    cap list grams freq grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
-   if _rc!=0 {
-     list grams freq grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
-   }
+   if _rc!=0 list grams freq grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
+   else list grams freq grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
    drop grams_per_obs
    local curtype:type grams
    if ("`curtype'"=="strL") qui recast `mystr' grams, force
    qui merge m:m grams using `diagfile1'
    qui gen max_common_space=sharem*share*100
-   replace max_common_space=0 if max_common_space==.
-   replace max_common_space=100 if max_common_space>100
+   qui replace max_common_space=0 if max_common_space==.
+   qui replace max_common_space=100 if max_common_space>100
    qui gen crosspairs=freqm*freq
    qui gen grams_per_obs=(freqm+freq)/(`mN'+`uN')
    format %9.4f grams_per_obs
@@ -245,9 +237,8 @@ program matchit
    gsort -crosspairs
    local upb=cond(_N>20, 20, _N)
    cap list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
-   if _rc!=0 {
-     list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
-   }
+   if _rc!=0 list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(33) str(33)
+   else list grams crosspairs max_common_space grams_per_obs in 1/`upb', t clean compress ab(50) str(50)
    di " "
    restore
  }
