@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.1  April 2016}{...}
+{* *! version 1.3  May 2016}{...}
 {vieweralsosee "[D] merge" "mansection D merge"}{...}
 {vieweralsosee "[D] append" "help append"}{...}
 {vieweralsosee "[D] joinby" "help joinby"}{...}
@@ -9,6 +9,7 @@
 {viewerjumpto "Options" "matchit##options"}{...}
 {viewerjumpto "Examples" "matchit##examples"}{...}
 {viewerjumpto "Remarks" "matchit##remarks"}{...}
+{viewerjumpto "Algorithms" "matchit##algorithms"}{...}
 {viewerjumpto "Tips" "matchit##tips"}{...}
 {viewerjumpto "References" "matchit##references"}{...}
 {marker Top}{...}
@@ -48,7 +49,8 @@
 {synoptline}
 {synopt :{opt sim:ilmethod(simfcn)}}
 String matching method. Default is {it:bigram}. Other built-in {it:simfcn} are:
-{it:ngram, ngram_circ, token, soundex} and {it:token_soundex}.
+{it:ngram, ngram_circ, firstgram, token, cotoken, scotoken, soundex, soundex_nara, soundex_fk, soundex_ext, token_soundex} 
+and {it:nysiis_fk}.
 {p_end}
 
 {synopt :{opt s:core(scrfcn)}}
@@ -210,7 +212,9 @@ inducing a negative effect on quality due to false positives.
 {phang}
 {opt sim:ilmethod(simfcn)}
 explicitly declares the method to parse the two string variables into {it:Grams}. 
-Default is {it:bigram}. Other built-in {it:simfcn} are: {it:token, soundex} and {it:token_soundex}.
+Default is {it:bigram}. Other built-in {it:simfcn} are: 
+{it:ngram, ngram_circ, firstgram, token, cotoken, scotoken, soundex, soundex_nara, soundex_fk, soundex_ext, token_soundex} 
+and {it:nysiis_fk}.
 {p_end}
 
 {phang}
@@ -406,8 +410,8 @@ The N-gram algorithm decomposes the text string into elements of N characters ({
 basis. As depicted as follows, a 3-gram decomposition of Smith, John and Smit, John have nine and eight 3-grams, respectively, 
  but they share six of them: {p_end}
  
-{phang2} {it: Smith, John} : {bf:Smi mit} {it:ith th, h, } {bf:, J  Jo Joh ohn} {p_end}
-{phang2} {it: Smit, John} : {bf:Smi mit} {it: it, t, } {bf:, J  Jo Joh ohn}{p_end}
+{phang2} {it: Smith, John} : {bf:Smi mit} {it:ith th, h,_ } {bf:,_J  _Jo Joh ohn} {p_end}
+{phang2} {it: Smit, John} : {bf:Smi mit} {it: it, t,_ } {bf:,_J  _Jo Joh ohn}{p_end}
 
 {pstd}Similarly,  a 3-gram decomposition of John Smith has eight 3-grams and shares five of them with Smith, John
 ({it:John Smith} : {bf:Joh ohn} {it:hn  n S  Sm} {bf:Smi mit ith}). This exemplifies how 
@@ -430,6 +434,69 @@ While transforming Smith, John into Smith, Peter requires nine operation
 
 {pstd}As today, {cmd:matchit} performs {it:Vectorial decomposition} and {it:phonetic algorithms} 
 but does not perform {it:edit-distance} ones as they are not indexable.{p_end}
+
+{marker algorithms}{...}
+{pstd}{it:Description of available algorithms}{p_end}
+
+{pstd}{it:Vectorial decomposition}{p_end}
+
+{phang2}sim(bigram) or sim(ngram, {bf:2}): Splits text into grams of 2 moving chars. e.g. "John Smith" splits to Jo oh hn n_ _S Sm mi it th {p_end}
+
+{phang2}sim(ngram, {it:n}): Splits text into grams of {it:n} moving chars. e.g if {it:n=3} "John Smith" splits to Joh ohn hn_ n_S _Sm Smi mit ith {p_end}
+
+{phang2}sim(ngram_circ, {it:n}): Splits text into grams of {it:n} moving chars circularly. 
+i.e. both "John Smith" and "Smith John" splits to exactly the same {it:grams}. 
+e.g. if {it:n=3} both split to Joh ohn hn_ n_S _Sm Smi mit ith th_ h_J _Jo {p_end}
+ 
+{phang2}sim(token): Splits text into tokens (see {help mata tokens}). e.g. "John Smith" splits to John Smith {p_end}
+
+{phang2}sim(firstgram, {it:n}): Keeps only the first {it:n} chars of each token. 
+e.g. if {it:n=3} "John Smith" splits to Joh Smi {p_end}
+
+{phang2}sim(cotoken): Splits text into pairs of colocated tokens. 
+Better for establishing similarity scores between long texts.
+Use with {it:stopwordsauto} recommended.{p_end}
+
+{phang2}sim(scotoken): Splits text into single tokens and pairs of colocated tokens. 
+Better for establishing similarity scores between long texts.
+Use with {it:stopwordsauto} recommended.{p_end}
+
+{pstd}{it:Phonetic algorithms}{p_end}
+
+{phang2}sim(soundex): Recodes text using the soundex algorithm (see {help mata soundex}). 
+e.g. "John Smith" recodes to J525 {p_end}
+
+{phang2}sim(soundex_nara): Recodes text using the soundex NARA algorithm (see {help mata soundex_nara}). 
+e.g. "John Smith" recodes to J525 {p_end}
+
+{phang2}sim(soundex_fk): Recodes text using the soundex algorithm but keeping the full key 
+(i.e. more than 4 digits allowed but ignore trailing zeros). 
+e.g. recodes to J5253 {p_end}
+
+{phang2}sim(nysiis_fk): Recodes text using the NYSIIS algorithm but keeping the full key
+(i.e. more than 6 digits allowed). 
+e.g. "John Smith" recodes to JANSNAT {p_end}
+
+{pstd}{it:Hybrids}{p_end}
+
+{phang2}sim(soundex_ext): Splits full soundex full key into {it:grams} of increasing size. 
+e.g. "John Smith" recodes and splits to J5 J52 J525 J5253{p_end}
+
+{phang2}sim(token_soundex) or sim(tokenwrap, "soundex"): applies soundex algorithm to each token.
+e.g. "John Smith" recodes and splits to J500 S530 {p_end}
+
+{phang2}sim(tokenwrap, "soundex_nara"): applies soundex NARA algorithm to each token.
+e.g. "John Smith" recodes and splits to J500 S530 {p_end}
+
+{phang2}sim(tokenwrap, "soundex_fk"): applies soundex full key to each token.
+e.g. "Johnatan Smithsonian" recodes and splits to J535 S532255{p_end}
+
+{phang2}sim(tokenwrap, "soundex_ext"): applies soundex full key to each token and them into {it:grams} of increasing size.
+e.g. "Johnatan Smithsonian" recodes and splits to J5 J53 J535 S5 S53 S532 S5322 S53225 S532255{p_end}
+
+{phang2}sim(tokenwrap, "nysiis_fk"): applies NYSIIS full key to each token
+e.g. "John Smith" recodes and splits to JAN SNAT {p_end}
+  
 
 {pstd}Each algorithm has its own merits. 
 For example, phonetic based algorithms are more efficient at managing similar sounds based on misspellings. 
@@ -547,7 +614,7 @@ All these are coded in Mata as functions with relatively simple structure and na
 {p_end}
 
 {phang2} {it:Similarity functions} just receive a string scalar, parses it into {it:grams} and return them in an associative array.
-Optionally, you can have an argument passed to the custom function (like {it:simf_ngram} does), 
+Optionally, you can have an argument passed to the custom function (like {it:simf_ngram} or {it:simf_tokenwrap} do), 
 which has to be passed after the string and it is used only within your function.
 The naming convention is to have {it:simf_} before the name of your function.{p_end}
 
