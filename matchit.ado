@@ -1,4 +1,4 @@
-*! 1.5.2 J.D. Raffo May 2020
+*! 1.5.3 J.D. Raffo May 2020
 program matchit
  version 12
  syntax varlist(min=2 max=2) ///
@@ -16,8 +16,8 @@ program matchit
  cap which freqindex
  if (_rc!=0){
   di "freqindex not found."
-  di "matchit requires freqindex to be installed. You can get it in SSC."
-  error _rc
+  di "matchit requires freqindex to be installed. You can get it in SSC or Github."
+  exit
  }
  // version check
  local mystr=cond(_caller()>=13,"str2045", "str244")

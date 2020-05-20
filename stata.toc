@@ -3,4 +3,3 @@ d Text similarity matching materials
 d J. Raffo, WIPO Economics and Statistics Division
 d
 p matchit text similarity matching
-p freqindex text indexing tool
