@@ -15,9 +15,9 @@ program matchit
  // freqindex check
  cap which freqindex
  if (_rc!=0){
-  di "freqindex not found."
-  di "matchit requires freqindex to be installed. You can get it in SSC or Github."
-  exit
+  di as error "command freqindex not found."
+  di as error "matchit requires freqindex to be installed. You can get it in SSC or Github."
+  exit = 162
  }
  // version check
  local mystr=cond(_caller()>=13,"str2045", "str244")
